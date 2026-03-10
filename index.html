@@ -1036,7 +1036,7 @@ tbody tr:hover td{background:var(--surface2);}
 </header>
 
 <div class="ticker">
-  <span class="ticker-inner">◆ SCAN PRO &nbsp;·&nbsp; SCANNER DE CODE-BARRES &nbsp;·&nbsp; MODE NUIT / JOUR &nbsp;·&nbsp; IMPORT / EXPORT CSV &nbsp;·&nbsp; OPEN FOOD FACTS &nbsp;·&nbsp; CATALOGUE COMPLET &nbsp;&nbsp;&nbsp;&nbsp;</span>
+  <span class="ticker-inner" id="tickerContent">◆ SCAN PRO &nbsp;·&nbsp; Chargement…</span>
 </div>
 
 <!-- TABS -->
@@ -1342,10 +1342,13 @@ tbody tr:hover td{background:var(--surface2);}
               <li>Aller sur <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a></li>
               <li>Créer un projet (ou sélectionner un projet existant)</li>
               <li><strong>APIs &amp; Services</strong> → <strong>Bibliothèque</strong> → activer <strong>Google Drive API</strong></li>
-              <li><strong>APIs &amp; Services</strong> → <strong>Identifiants</strong> → <strong>+ Créer identifiants</strong> → <strong>ID client OAuth 2.0</strong></li>
+              <li><strong>APIs &amp; Services</strong> → <strong>Écran de consentement OAuth</strong> → Type : <strong>Externe</strong> → Statut : <strong>Test</strong> → Ajouter votre email comme utilisateur test</li>
+              <li>Dans l'écran de consentement → <strong>Ajouter ou supprimer des champs d'application</strong> → cocher <code>https://www.googleapis.com/auth/drive</code></li>
+              <li><strong>Identifiants</strong> → <strong>+ Créer identifiants</strong> → <strong>ID client OAuth 2.0</strong></li>
               <li>Type d'application : <strong>Application Web</strong></li>
-              <li>Dans « Origines JavaScript autorisées » : ajouter l'URL exacte de cette page (ex : <code id="currentOrigin"></code>)</li>
-              <li>Copier le <strong>Client ID</strong> généré et le coller ci-dessus</li>
+              <li>Dans « Origines JavaScript autorisées » : ajouter <code id="currentOrigin"></code></li>
+              <li>Copier le <strong>Client ID</strong> et le coller ci-dessus</li>
+              <li>⚠️ Si vous avez déjà un token, cliquez <strong>Déconnecter</strong> puis reconnectez-vous pour obtenir les nouveaux scopes</li>
             </ol>
           </details>
 
@@ -1365,6 +1368,12 @@ tbody tr:hover td{background:var(--surface2);}
             <button class="btn btn-sm btn-red" onclick="gdDisconnect()">Déconnecter</button>
           </div>
 
+          <!-- Auto-save status -->
+          <div class="section-label" style="margin-bottom:6px;">Synchronisation automatique</div>
+          <div id="gdLastSaveInfo" style="margin-bottom:14px;">
+            <span style="color:var(--text3);font-size:10px;">Aucune auto-sauvegarde encore</span>
+          </div>
+
           <!-- Folder selector -->
           <div class="section-label" style="margin-bottom:6px;">Dossier de destination</div>
           <div class="gdrive-folder-row" onclick="gdOpenFolderPicker()">
@@ -1378,8 +1387,12 @@ tbody tr:hover td{background:var(--surface2);}
 
           <!-- Actions -->
           <div class="gdrive-actions">
-            <button class="btn btn-amber btn-sm" onclick="gdSaveBackup()">☁️ &nbsp;Sauvegarder sur Drive</button>
-            <button class="btn btn-sm" onclick="gdRefreshBackups()">↺ &nbsp;Actualiser</button>
+            <button class="btn btn-amber btn-sm" onclick="gdSaveBackup()">☁️ &nbsp;Sauvegarder maintenant</button>
+            <button class="btn btn-sm" onclick="gdRefreshBackups()">↺ &nbsp;Actualiser la liste</button>
+          </div>
+          <div class="setting-row" style="margin-bottom:12px;">
+            <div class="sr-info"><div class="sr-label">Auto-sync à chaque modification</div><div class="sr-sub">Enregistre sur Drive 4s après chaque changement</div></div>
+            <label class="toggle"><input type="checkbox" id="gdAutoSyncToggle" checked onchange="try{localStorage.setItem('sp_gd_autosync',this.checked)}catch(e){}"><span class="tgl-track"></span></label>
           </div>
 
           <!-- Drive backup list -->
@@ -2322,7 +2335,7 @@ function clearSearch() {
 function renderCat() {
   const q = (document.getElementById('searchIn')?.value || '').toLowerCase();
   const p = perms();
-  const sz = document.getElementById('cardSz')?.value || '185';
+  const sz = document.getElementById('cardSz')?.value || localStorage.getItem('sp_cardSz') || '185';
 
   const filtered = catalogue.map((a, i) => ({ ...a, _i: i })).filter(a => {
     if (activeFilter && a['Catégorie'] !== activeFilter) return false;
@@ -2332,7 +2345,7 @@ function renderCat() {
            (a['Catégorie'] || '').toLowerCase().includes(q);
   });
 
-  document.querySelector('.articles-grid').style.setProperty('--card-w', sz + 'px');
+  document.documentElement.style.setProperty('--card-w', sz + 'px');
 
   const grid = document.getElementById('catGrid');
   if (!catalogue.length) {
@@ -2394,7 +2407,8 @@ function setScanlines(on) {
 }
 
 function setCardSize(v) {
-  document.querySelector('.articles-grid')?.style.setProperty('--card-w', v + 'px');
+  document.documentElement.style.setProperty('--card-w', v + 'px');
+  try { localStorage.setItem('sp_cardSz', v); } catch(e){}
 }
 
 function perms() {
@@ -2589,8 +2603,16 @@ function formatDate(d) {
   return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 function saveCat() {
-  try { localStorage.setItem('sp_cat', JSON.stringify(catalogue)); } catch(e){}
+  try {
+    // Save previous snapshot before overwriting (for undo)
+    const prev = localStorage.getItem('sp_cat');
+    if (prev) try { localStorage.setItem('sp_cat_prev', prev); } catch(e){}
+    localStorage.setItem('sp_cat', JSON.stringify(catalogue));
+  } catch(e){}
+  updateTicker();
+  gdScheduleAutoSave();
 }
+
 function loadCat() {
   try {
     const d = localStorage.getItem('sp_cat');
@@ -2948,7 +2970,7 @@ const GD = {
   pickerSelected: null, // { id, name } during folder selection
 };
 
-const GD_SCOPE      = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+const GD_SCOPE      = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 const GD_DRIVE_API  = 'https://www.googleapis.com/drive/v3';
 const GD_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 
@@ -3105,7 +3127,11 @@ function gdDisconnect() {
 function gdEnsureToken(action) {
   if (GD.accessToken && Date.now() < GD.tokenExpiry) { action(); return; }
   GD.pendingAction = action;
-  gdConnect();
+  // Force consent to ensure full scope is granted
+  gdSetStatus('busy', 'Actualisation du token…');
+  if (!GD.tokenClient) gdInitTokenClient();
+  if (!GD.tokenClient) { toast('Google non chargé', 'err'); return; }
+  GD.tokenClient.requestAccessToken({ prompt: '' }); // silent refresh
 }
 
 // ── Folder Management ────────────
@@ -3415,10 +3441,126 @@ function gdInit() {
   gdLoad();
   if (GD.clientId) gdInitTokenClient();
   gdRenderUI();
+  gdUpdateLastSaveUI();
   // Restore token client when GIS loads
   if (typeof google !== 'undefined' && google?.accounts?.oauth2) {
     gdInitTokenClient();
   }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TICKER — live stats banner
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function updateTicker() {
+  const el = document.getElementById('tickerContent');
+  if (!el) return;
+  const total    = catalogue.length;
+  const actifs   = catalogue.filter(a => a['Actif'] !== 'Non').length;
+  const promo    = catalogue.filter(a => a['Promo'] === '1').length;
+  const rupture  = catalogue.filter(a => { const s = parseStock(a['Stock']); return s !== null && s === 0; }).length;
+  const faible   = catalogue.filter(a => { const s = parseStock(a['Stock']); return s !== null && s > 0 && s <= 5; }).length;
+  const valeur   = catalogue.reduce((sum, a) => { const p = parsePrix(a['Prix']); const s = parseStock(a['Stock']); return sum + (p !== null && s !== null ? p * s : 0); }, 0);
+  const today    = new Date(); today.setHours(0,0,0,0);
+  const expires7 = catalogue.filter(a => { if (!a['DLC']) return false; const d = new Date(a['DLC']); d.setHours(0,0,0,0); const diff = Math.round((d - today) / 86400000); return diff >= 0 && diff <= 7; }).length;
+  const expired  = catalogue.filter(a => { if (!a['DLC']) return false; const d = new Date(a['DLC']); d.setHours(0,0,0,0); return d < today; }).length;
+  const syncTxt  = (GD.accessToken && Date.now() < GD.tokenExpiry) ? (GD._autoSavePending ? '☁️ Sync…' : '☁️ Drive ✓') : ''; 
+  const parts = ['◆ SCAN PRO', `📦 ${total} article${total!==1?'s':'}`, `✅ ${actifs} actif${actifs!==1?'s':'}`];
+  if (valeur > 0) parts.push(`💰 ${valeur.toFixed(0)} €`);
+  if (promo  > 0) parts.push(`🏷 ${promo} en promo`);
+  if (rupture> 0) parts.push(`⊗ ${rupture} rupture`);
+  if (faible > 0) parts.push(`⚠ ${faible} stock faible`);
+  if (expires7>0) parts.push(`⏳ ${expires7} DLC < 7j`);
+  if (expired >0) parts.push(`🔴 ${expired} expirés`);
+  if (syncTxt)    parts.push(syncTxt);
+  parts.push('◆ SCAN PRO');
+  el.innerHTML = parts.join(' &nbsp;·&nbsp; ') + ' &nbsp;&nbsp;&nbsp;&nbsp;';
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  AUTO-SAVE GOOGLE DRIVE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let _gdAutoSaveTimer = null;
+
+function gdScheduleAutoSave() {
+  if (!GD.clientId || !GD.accessToken || Date.now() >= GD.tokenExpiry) return;
+  // Respect the auto-sync toggle
+  const toggle = document.getElementById('gdAutoSyncToggle');
+  if (toggle && !toggle.checked) return;
+  GD._autoSavePending = true;
+  updateTicker();
+  clearTimeout(_gdAutoSaveTimer);
+  _gdAutoSaveTimer = setTimeout(gdAutoSave, 4000);
+}
+
+async function gdAutoSave() {
+  if (!GD.accessToken || Date.now() >= GD.tokenExpiry) return;
+  GD._autoSavePending = false;
+  const now      = new Date();
+  const filename = 'ScanPro_auto_' + now.toISOString().slice(0,10) + '.json';
+  const payload  = JSON.stringify({ version:'3.1', label:'Auto ' + formatDate(now), date:now.toISOString(), count:catalogue.length, catalogue }, null, 2);
+  try {
+    const boundary = 'sp_' + Date.now();
+    const meta = JSON.stringify({ name:filename, mimeType:'application/json', parents:GD.folderId?[GD.folderId]:[], description:'Auto-save SCAN PRO — '+catalogue.length+' articles' });
+    const body = ['--'+boundary,'Content-Type: application/json; charset=UTF-8','',meta,'--'+boundary,'Content-Type: application/json','',payload,'--'+boundary+'--'].join('\r\n');
+    const r = await fetch(GD_UPLOAD_API+'/files?uploadType=multipart&fields=id,name', {
+      method:'POST',
+      headers:{ Authorization:'Bearer '+GD.accessToken, 'Content-Type':'multipart/related; boundary='+boundary },
+      body,
+    });
+    if (!r.ok) throw await r.text();
+    const f = await r.json();
+    try { localStorage.setItem('sp_gd_last', JSON.stringify({id:f.id, name:f.name, date:now.toISOString(), count:catalogue.length})); } catch(e){}
+    updateTicker();
+    gdUpdateLastSaveUI();
+  } catch(e) { console.warn('gdAutoSave failed', e); }
+}
+
+function gdUpdateLastSaveUI() {
+  const el = document.getElementById('gdLastSaveInfo');
+  if (!el) return;
+  try {
+    const d = JSON.parse(localStorage.getItem('sp_gd_last') || 'null');
+    if (!d) { el.innerHTML = '<span style="color:var(--text3);font-size:10px;">Aucune auto-sauvegarde encore</span>'; return; }
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;font-family:var(--display);font-weight:700;color:var(--green);">☁️ Sync : ${formatDate(new Date(d.date))}</div>
+        <div style="font-size:10px;color:var(--text3);">${d.count} articles · ${h(d.name)}</div>
+      </div>
+      <button class="btn btn-sm" onclick="gdRestorePreviousLocal()">↺ Version locale préc.</button>
+      <button class="btn btn-sm btn-amber" onclick="gdRestoreLastDrive('${d.id}','${d.name.replace(/'/g,"\\'")}')">☁️ Restaurer Drive</button>
+    </div>`;
+  } catch(e) {}
+}
+
+function gdRestorePreviousLocal() {
+  try {
+    const prev = localStorage.getItem('sp_cat_prev');
+    if (!prev) { toast('Pas de version précédente', 'warn'); return; }
+    const data = JSON.parse(prev);
+    if (!Array.isArray(data)) throw 0;
+    if (!confirm('Restaurer la version précédente ('+data.length+' articles) ?\nLe catalogue actuel ('+catalogue.length+' articles) sera remplacé.')) return;
+    catalogue = data;
+    updateChip(); saveCat(); renderStats(); renderCat(); renderFilters();
+    toast(data.length + ' articles restaurés ✓', 'ok');
+  } catch(e) { toast('Aucune version précédente', 'warn'); }
+}
+
+async function gdRestoreLastDrive(fileId, fileName) {
+  if (!confirm('Restaurer "'+fileName+'" depuis Drive ?\nLe catalogue actuel ('+catalogue.length+' articles) sera remplacé.')) return;
+  gdEnsureToken(async () => {
+    toast('Téléchargement…', 'warn');
+    try {
+      const r = await fetch(GD_DRIVE_API+'/files/'+fileId+'?alt=media', { headers:{Authorization:'Bearer '+GD.accessToken} });
+      if (!r.ok) throw await r.text();
+      const p = await r.json();
+      if (!p.catalogue || !Array.isArray(p.catalogue)) throw 'Format invalide';
+      catalogue = p.catalogue;
+      updateChip(); saveCat(); renderStats(); renderCat(); renderFilters();
+      toast(catalogue.length + ' articles restaurés depuis Drive ✓', 'ok');
+      goTab('catalogue');
+    } catch(e) { toast('Erreur restauration Drive', 'err'); }
+  });
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -3451,8 +3593,20 @@ Tomate;77772987292209;3.00;10;Frais / Réfrigéré;unité;2026-03-13;0;Oui`;
   renderFilters();
   applyPerms();
 
+  // Restore card size
+  const savedSz = localStorage.getItem('sp_cardSz');
+  if (savedSz) {
+    document.documentElement.style.setProperty('--card-w', savedSz + 'px');
+    const sel = document.getElementById('cardSz');
+    if (sel) sel.value = savedSz;
+  }
+
+  // Init ticker
+  updateTicker();
+
   // Init Google Drive
   gdInit();
+  gdUpdateLastSaveUI();
 
   // Show current origin for OAuth setup guide
   const originEl = document.getElementById('currentOrigin');
