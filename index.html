@@ -757,6 +757,18 @@ tbody tr:hover td{background:var(--surface2);}
 
 .gdrive-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 
+/* Auto-save status box */
+.gd-status-box{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:rgba(47,158,68,.08);border:1px solid rgba(47,158,68,.2);
+  border-radius:var(--radius);padding:10px 12px;
+}
+.gd-status-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0;}
+.gd-status-icon{font-size:20px;flex-shrink:0;}
+.gd-status-title{font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:1px;color:var(--green);}
+.gd-status-sub{font-size:10px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gd-status-btns{display:flex;gap:6px;flex-shrink:0;}
+
 .gdrive-backup-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;}
 .gdrive-backup-item{
   display:flex;align-items:center;gap:8px;
@@ -1370,8 +1382,18 @@ tbody tr:hover td{background:var(--surface2);}
 
           <!-- Auto-save status -->
           <div class="section-label" style="margin-bottom:6px;">Synchronisation automatique</div>
+
+          <div class="setting-row" style="margin-bottom:10px;">
+            <div class="sr-info">
+              <div class="sr-label">Auto-sync à chaque modification</div>
+              <div class="sr-sub">Enregistre sur Drive ~4s après chaque changement · 1 fichier par jour (mis à jour)</div>
+            </div>
+            <label class="toggle"><input type="checkbox" id="gdAutoSyncToggle" checked onchange="try{localStorage.setItem('sp_gd_autosync',this.checked)}catch(e){}"><span class="tgl-track"></span></label>
+          </div>
+
+          <!-- Last save info + restore -->
           <div id="gdLastSaveInfo" style="margin-bottom:14px;">
-            <span style="color:var(--text3);font-size:10px;">Aucune auto-sauvegarde encore</span>
+            <span style="color:var(--text3);font-size:10px;">Aucune auto-sauvegarde encore.</span>
           </div>
 
           <!-- Folder selector -->
@@ -1385,14 +1407,10 @@ tbody tr:hover td{background:var(--surface2);}
             <span class="gdrive-folder-change">Modifier ›</span>
           </div>
 
-          <!-- Actions -->
+          <!-- Manual actions -->
           <div class="gdrive-actions">
             <button class="btn btn-amber btn-sm" onclick="gdSaveBackup()">☁️ &nbsp;Sauvegarder maintenant</button>
             <button class="btn btn-sm" onclick="gdRefreshBackups()">↺ &nbsp;Actualiser la liste</button>
-          </div>
-          <div class="setting-row" style="margin-bottom:12px;">
-            <div class="sr-info"><div class="sr-label">Auto-sync à chaque modification</div><div class="sr-sub">Enregistre sur Drive 4s après chaque changement</div></div>
-            <label class="toggle"><input type="checkbox" id="gdAutoSyncToggle" checked onchange="try{localStorage.setItem('sp_gd_autosync',this.checked)}catch(e){}"><span class="tgl-track"></span></label>
           </div>
 
           <!-- Drive backup list -->
@@ -2333,9 +2351,13 @@ function clearSearch() {
 }
 
 function renderCat() {
-  const q = (document.getElementById('searchIn')?.value || '').toLowerCase();
-  const p = perms();
-  const sz = document.getElementById('cardSz')?.value || localStorage.getItem('sp_cardSz') || '185';
+  const q  = (document.getElementById('searchIn')?.value || '').toLowerCase();
+  const p  = perms();
+  const sz = localStorage.getItem('sp_cardSz') || '185';
+
+  // Apply grid size (always in sync)
+  const grid = document.getElementById('catGrid');
+  if (grid) grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(' + sz + 'px,1fr))';
 
   const filtered = catalogue.map((a, i) => ({ ...a, _i: i })).filter(a => {
     if (activeFilter && a['Catégorie'] !== activeFilter) return false;
@@ -2345,9 +2367,6 @@ function renderCat() {
            (a['Catégorie'] || '').toLowerCase().includes(q);
   });
 
-  document.documentElement.style.setProperty('--card-w', sz + 'px');
-
-  const grid = document.getElementById('catGrid');
   if (!catalogue.length) {
     grid.innerHTML = `<div class="grid-empty"><div class="ge-icon">▦</div><div class="ge-title">Catalogue vide</div><div class="ge-sub">Importez un CSV ou ajoutez un article manuellement</div></div>`;
     return;
@@ -2407,8 +2426,17 @@ function setScanlines(on) {
 }
 
 function setCardSize(v) {
+  v = String(v);
   document.documentElement.style.setProperty('--card-w', v + 'px');
+  // Also sync the select element in settings if called programmatically
+  const sel = document.getElementById('cardSz');
+  if (sel && sel.value !== v) sel.value = v;
   try { localStorage.setItem('sp_cardSz', v); } catch(e){}
+  // Force grid re-render so new column widths apply immediately
+  const grid = document.getElementById('catGrid');
+  if (grid) {
+    grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(' + v + 'px,1fr))';
+  }
 }
 
 function perms() {
@@ -3456,24 +3484,42 @@ function updateTicker() {
   if (!el) return;
   const total    = catalogue.length;
   const actifs   = catalogue.filter(a => a['Actif'] !== 'Non').length;
+  const inactifs = total - actifs;
   const promo    = catalogue.filter(a => a['Promo'] === '1').length;
   const rupture  = catalogue.filter(a => { const s = parseStock(a['Stock']); return s !== null && s === 0; }).length;
   const faible   = catalogue.filter(a => { const s = parseStock(a['Stock']); return s !== null && s > 0 && s <= 5; }).length;
-  const valeur   = catalogue.reduce((sum, a) => { const p = parsePrix(a['Prix']); const s = parseStock(a['Stock']); return sum + (p !== null && s !== null ? p * s : 0); }, 0);
+  const valeur   = catalogue.reduce((sum, a) => { const p2 = parsePrix(a['Prix']); const s = parseStock(a['Stock']); return sum + (p2 !== null && s !== null ? p2 * s : 0); }, 0);
+  const cats     = new Set(catalogue.map(a => a['Catégorie']).filter(Boolean)).size;
   const today    = new Date(); today.setHours(0,0,0,0);
   const expires7 = catalogue.filter(a => { if (!a['DLC']) return false; const d = new Date(a['DLC']); d.setHours(0,0,0,0); const diff = Math.round((d - today) / 86400000); return diff >= 0 && diff <= 7; }).length;
   const expired  = catalogue.filter(a => { if (!a['DLC']) return false; const d = new Date(a['DLC']); d.setHours(0,0,0,0); return d < today; }).length;
-  const syncTxt  = (GD.accessToken && Date.now() < GD.tokenExpiry) ? (GD._autoSavePending ? '☁️ Sync…' : '☁️ Drive ✓') : ''; 
-  const parts = ['◆ SCAN PRO', `📦 ${total} article${total!==1?'s':'}`, `✅ ${actifs} actif${actifs!==1?'s':'}`];
-  if (valeur > 0) parts.push(`💰 ${valeur.toFixed(0)} €`);
-  if (promo  > 0) parts.push(`🏷 ${promo} en promo`);
-  if (rupture> 0) parts.push(`⊗ ${rupture} rupture`);
-  if (faible > 0) parts.push(`⚠ ${faible} stock faible`);
-  if (expires7>0) parts.push(`⏳ ${expires7} DLC < 7j`);
-  if (expired >0) parts.push(`🔴 ${expired} expirés`);
-  if (syncTxt)    parts.push(syncTxt);
-  parts.push('◆ SCAN PRO');
-  el.innerHTML = parts.join(' &nbsp;·&nbsp; ') + ' &nbsp;&nbsp;&nbsp;&nbsp;';
+
+  // Drive sync status
+  const connected = GD.accessToken && Date.now() < GD.tokenExpiry;
+  let syncTxt = '';
+  if (connected) {
+    syncTxt = GD._autoSavePending ? '☁️ Sync en cours…' : '☁️ Drive ✓';
+  }
+
+  const parts = [
+    '◆ SCAN PRO',
+    '📦 ' + total + ' article' + (total !== 1 ? 's' : ''),
+    '✅ ' + actifs + ' actif' + (actifs !== 1 ? 's' : ''),
+  ];
+  if (inactifs > 0) parts.push('⛔ ' + inactifs + ' inactif' + (inactifs !== 1 ? 's' : ''));
+  if (valeur  > 0)  parts.push('💰 ' + valeur.toFixed(2) + ' €');
+  if (cats    > 0)  parts.push('🏷 ' + cats + ' catégorie' + (cats !== 1 ? 's' : ''));
+  if (promo   > 0)  parts.push('🔖 ' + promo + ' en promo');
+  if (rupture > 0)  parts.push('⊗ ' + rupture + ' rupture' + (rupture !== 1 ? 's' : ''));
+  if (faible  > 0)  parts.push('⚠ ' + faible + ' stock faible');
+  if (expires7> 0)  parts.push('⏳ ' + expires7 + ' DLC ≤ 7j');
+  if (expired > 0)  parts.push('🔴 ' + expired + ' expiré' + (expired !== 1 ? 's' : ''));
+  if (syncTxt)      parts.push(syncTxt);
+  parts.push('◆');
+
+  // Duplicate for seamless loop
+  const joined = parts.join(' &nbsp;·&nbsp; ');
+  el.innerHTML = joined + ' &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ' + joined + ' &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
 }
 
 
@@ -3497,23 +3543,69 @@ async function gdAutoSave() {
   if (!GD.accessToken || Date.now() >= GD.tokenExpiry) return;
   GD._autoSavePending = false;
   const now      = new Date();
-  const filename = 'ScanPro_auto_' + now.toISOString().slice(0,10) + '.json';
-  const payload  = JSON.stringify({ version:'3.1', label:'Auto ' + formatDate(now), date:now.toISOString(), count:catalogue.length, catalogue }, null, 2);
+  const dateSlug = now.toISOString().slice(0,10);          // YYYY-MM-DD
+  const filename = 'ScanPro_auto_' + dateSlug + '.json';
+  const payload  = JSON.stringify({
+    version: '3.1',
+    label:   'Auto ' + formatDate(now),
+    date:    now.toISOString(),
+    count:   catalogue.length,
+    catalogue,
+  }, null, 2);
+
   try {
-    const boundary = 'sp_' + Date.now();
-    const meta = JSON.stringify({ name:filename, mimeType:'application/json', parents:GD.folderId?[GD.folderId]:[], description:'Auto-save SCAN PRO — '+catalogue.length+' articles' });
-    const body = ['--'+boundary,'Content-Type: application/json; charset=UTF-8','',meta,'--'+boundary,'Content-Type: application/json','',payload,'--'+boundary+'--'].join('\r\n');
-    const r = await fetch(GD_UPLOAD_API+'/files?uploadType=multipart&fields=id,name', {
-      method:'POST',
-      headers:{ Authorization:'Bearer '+GD.accessToken, 'Content-Type':'multipart/related; boundary='+boundary },
-      body,
-    });
-    if (!r.ok) throw await r.text();
-    const f = await r.json();
-    try { localStorage.setItem('sp_gd_last', JSON.stringify({id:f.id, name:f.name, date:now.toISOString(), count:catalogue.length})); } catch(e){}
+    const headers = { Authorization: 'Bearer ' + GD.accessToken };
+
+    // ── Check if a file with this name already exists today ──
+    const qParts = [`name='${filename}'`, "trashed=false", "mimeType='application/json'"];
+    if (GD.folderId) qParts.push(`'${GD.folderId}' in parents`);
+    const q   = encodeURIComponent(qParts.join(' and '));
+    const chk = await fetch(`${GD_DRIVE_API}/files?q=${q}&fields=files(id,name)&pageSize=1`, { headers });
+    const chkData = await chk.json();
+    const existing = chkData.files?.[0];
+
+    let fileId;
+    if (existing) {
+      // ── UPDATE existing file (PATCH media) ──
+      const r = await fetch(`${GD_UPLOAD_API}/files/${existing.id}?uploadType=media`, {
+        method:  'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body:    payload,
+      });
+      if (!r.ok) throw await r.text();
+      fileId = existing.id;
+    } else {
+      // ── CREATE new file (multipart) ──
+      const boundary = 'sp_' + Date.now();
+      const meta = JSON.stringify({
+        name: filename, mimeType: 'application/json',
+        parents: GD.folderId ? [GD.folderId] : [],
+        description: 'Auto-save SCAN PRO — ' + catalogue.length + ' articles',
+        appProperties: { app: 'scanpro' },
+      });
+      const body = ['--'+boundary,'Content-Type: application/json; charset=UTF-8','',meta,'--'+boundary,'Content-Type: application/json','',payload,'--'+boundary+'--'].join('\r\n');
+      const r = await fetch(`${GD_UPLOAD_API}/files?uploadType=multipart&fields=id,name`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'multipart/related; boundary='+boundary },
+        body,
+      });
+      if (!r.ok) throw await r.text();
+      const f = await r.json();
+      fileId = f.id;
+    }
+
+    // ── Save last-save info locally (for quick restore) ──
+    try { localStorage.setItem('sp_gd_last', JSON.stringify({
+      id: fileId, name: filename,
+      date: now.toISOString(), count: catalogue.length,
+    })); } catch(e){}
+
     updateTicker();
     gdUpdateLastSaveUI();
-  } catch(e) { console.warn('gdAutoSave failed', e); }
+  } catch(e) {
+    console.warn('gdAutoSave failed', e);
+    updateTicker();
+  }
 }
 
 function gdUpdateLastSaveUI() {
@@ -3521,15 +3613,38 @@ function gdUpdateLastSaveUI() {
   if (!el) return;
   try {
     const d = JSON.parse(localStorage.getItem('sp_gd_last') || 'null');
-    if (!d) { el.innerHTML = '<span style="color:var(--text3);font-size:10px;">Aucune auto-sauvegarde encore</span>'; return; }
-    el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:11px;font-family:var(--display);font-weight:700;color:var(--green);">☁️ Sync : ${formatDate(new Date(d.date))}</div>
-        <div style="font-size:10px;color:var(--text3);">${d.count} articles · ${h(d.name)}</div>
-      </div>
-      <button class="btn btn-sm" onclick="gdRestorePreviousLocal()">↺ Version locale préc.</button>
-      <button class="btn btn-sm btn-amber" onclick="gdRestoreLastDrive('${d.id}','${d.name.replace(/'/g,"\\'")}')">☁️ Restaurer Drive</button>
-    </div>`;
+    const hasPrev = !!localStorage.getItem('sp_cat_prev');
+
+    if (!d) {
+      el.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="color:var(--text3);font-size:10px;flex:1;">Aucune auto-sauvegarde Drive encore.</span>
+          ${hasPrev ? `<button class="btn btn-sm" onclick="gdRestorePreviousLocal()">↺ Version locale préc.</button>` : ''}
+        </div>`;
+      return;
+    }
+
+    const since = (() => {
+      const diff = Math.floor((Date.now() - new Date(d.date)) / 60000);
+      if (diff < 1)  return 'à l\'instant';
+      if (diff < 60) return 'il y a ' + diff + 'min';
+      return 'il y a ' + Math.floor(diff/60) + 'h';
+    })();
+
+    el.innerHTML = `
+      <div class="gd-status-box">
+        <div class="gd-status-left">
+          <div class="gd-status-icon">☁️</div>
+          <div>
+            <div class="gd-status-title">Synchronisé — ${since}</div>
+            <div class="gd-status-sub">${formatDate(new Date(d.date))} · ${d.count} articles · ${h(d.name)}</div>
+          </div>
+        </div>
+        <div class="gd-status-btns">
+          ${hasPrev ? `<button class="btn btn-sm" title="Restaurer la version locale précédente (avant dernière modification)" onclick="gdRestorePreviousLocal()">↺ Préc.</button>` : ''}
+          <button class="btn btn-sm btn-amber" title="Restaurer depuis Drive" onclick="gdRestoreLastDrive('${d.id}','${h(d.name)}')">☁️ Drive</button>
+        </div>
+      </div>`;
   } catch(e) {}
 }
 
