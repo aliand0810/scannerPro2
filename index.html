@@ -4,6 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SCAN PRO</title>
+
+<!-- ═══ PWA META ══════════════════════════ -->
+<meta name="theme-color" id="metaThemeColor" content="#f0a500">
+<meta name="description" content="Scanner de codes-barres professionnel — catalogue, historique, Google Drive">
+<meta name="application-name" content="SCAN PRO">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SCAN PRO">
+<!-- Manifest + Icons (generated dynamically in JS) -->
+<link rel="manifest" id="pwaManifest">
+<link rel="apple-touch-icon" id="appleTouchIcon180">
+<link rel="icon" type="image/png" id="faviconLink">
+<!-- Microsoft -->
+<meta name="msapplication-TileColor" content="#07080a">
+<meta name="msapplication-TileImage" id="msTile">
+
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1027,6 +1045,78 @@ tbody tr:hover td{background:var(--surface2);}
 }
 .ticker-inner{display:inline-block;animation:tick 30s linear infinite;}
 @keyframes tick{from{transform:translateX(100vw)}to{transform:translateX(-100%)}}
+/* ─────────────────────────────────────────
+   PWA — INSTALL BUTTON & BANNER
+───────────────────────────────────────── */
+.pwa-install-btn{
+  display:flex;align-items:center;gap:5px;
+  background:var(--amber);color:#000;
+  border:none;border-radius:var(--radius-sm);
+  padding:5px 10px;cursor:pointer;
+  font-family:var(--display);font-size:10px;font-weight:700;
+  letter-spacing:1.5px;text-transform:uppercase;
+  transition:all var(--tr);margin-right:8px;
+  animation:pulse-install 2s ease-in-out infinite;
+}
+@keyframes pulse-install{0%,100%{box-shadow:0 0 0 0 rgba(240,165,0,.4)}50%{box-shadow:0 0 0 6px rgba(240,165,0,0)}}
+.pwa-install-btn:hover{background:var(--amber-light);transform:scale(1.04);}
+.pwa-install-icon{font-size:12px;}
+.pwa-install-txt{display:none;}
+@media(min-width:360px){.pwa-install-txt{display:inline;}}
+
+/* iOS install banner */
+.pwa-banner{
+  display:flex;align-items:center;gap:10px;
+  background:var(--surface);border-bottom:2px solid var(--amber);
+  padding:10px 14px;z-index:500;position:relative;
+  animation:slide-in .3s ease;
+}
+.pwa-banner-icon{
+  width:40px;height:40px;border-radius:10px;flex-shrink:0;
+  overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.4);
+}
+.pwa-banner-icon img{width:100%;height:100%;object-fit:cover;}
+.pwa-banner-body{flex:1;min-width:0;}
+.pwa-banner-title{font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text);}
+.pwa-banner-sub{font-size:10px;color:var(--text2);margin-top:2px;}
+.pwa-banner-sub strong{color:var(--amber);}
+.pwa-banner-close{background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0;}
+
+/* PWA settings card */
+.pwa-status-row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:var(--radius);
+  background:var(--surface2);border:1px solid var(--border);
+  margin-bottom:12px;
+}
+.pwa-status-dot{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  background:var(--text3);
+}
+.pwa-status-dot.ok  {background:var(--green);box-shadow:0 0 6px var(--green);}
+.pwa-status-dot.warn{background:var(--amber);box-shadow:0 0 6px var(--amber);}
+.pwa-status-dot.err {background:var(--red);}
+.pwa-status-info{flex:1;}
+.pwa-status-title{font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text);}
+.pwa-status-sub{font-size:10px;color:var(--text3);margin-top:2px;}
+
+.pwa-install-card{
+  display:flex;align-items:center;gap:12px;
+  background:var(--amber-glow);border:1px solid var(--amber-dim);
+  border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;
+}
+.pic-icon{width:44px;height:44px;border-radius:10px;flex-shrink:0;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.4);}
+.pic-icon img{width:100%;height:100%;object-fit:cover;}
+.pic-body{flex:1;min-width:0;}
+.pic-title{font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--amber);}
+.pic-sub{font-size:10px;color:var(--text2);margin-top:2px;}
+
+.pwa-installed-row{
+  display:flex;align-items:center;gap:12px;
+  background:rgba(47,158,68,.08);border:1px solid rgba(47,158,68,.2);
+  border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;
+}
+
 </style>
 </head>
 <body>
@@ -1043,9 +1133,23 @@ tbody tr:hover td{background:var(--surface2);}
     <span id="liveLabel">PRÊT</span>
   </div>
   <div class="header-right">
+    <button class="pwa-install-btn" id="pwaInstallBtn" style="display:none;" onclick="pwaInstall()" title="Installer l'application">
+      <span class="pwa-install-icon">⬇</span>
+      <span class="pwa-install-txt">Installer</span>
+    </button>
     <div class="chip" id="catChip" onclick="goTab('catalogue')">0 articles</div>
   </div>
 </header>
+
+<!-- PWA Install Banner (iOS) -->
+<div class="pwa-banner" id="pwaBanner" style="display:none;">
+  <div class="pwa-banner-icon" id="pwaBannerIcon"></div>
+  <div class="pwa-banner-body">
+    <div class="pwa-banner-title">Installer SCAN PRO</div>
+    <div class="pwa-banner-sub">Appuyez sur <strong>Partager</strong> puis <strong>Sur l'écran d'accueil</strong></div>
+  </div>
+  <button class="pwa-banner-close" onclick="pwaDismissBanner()">✕</button>
+</div>
 
 <div class="ticker">
   <span class="ticker-inner" id="tickerContent">◆ SCAN PRO &nbsp;·&nbsp; Chargement…</span>
@@ -1434,6 +1538,56 @@ tbody tr:hover td{background:var(--surface2);}
         </div>
         <div class="section-label" style="margin-bottom:8px;">Sauvegardes locales</div>
         <div class="backup-list" id="backupList"></div>
+      </div>
+    </div>
+
+    <!-- PWA -->
+    <div class="settings-card full">
+      <div class="sc-head"><span class="sc-icon">📱</span><span class="sc-title">Application installable (PWA)</span></div>
+      <div class="sc-body">
+        <div class="pwa-status-row" id="pwaStatusRow">
+          <div class="pwa-status-dot" id="pwaStatusDot"></div>
+          <div class="pwa-status-info">
+            <div class="pwa-status-title" id="pwaStatusTitle">Vérification…</div>
+            <div class="pwa-status-sub" id="pwaStatusSub">Service Worker en cours d'initialisation</div>
+          </div>
+        </div>
+
+        <div id="pwaInstallCard" style="display:none;">
+          <div class="pwa-install-card">
+            <div class="pic-icon" id="picIcon"></div>
+            <div class="pic-body">
+              <div class="pic-title">Installer SCAN PRO</div>
+              <div class="pic-sub">Accès hors-ligne · Icône sur l'écran d'accueil · Expérience app native</div>
+            </div>
+            <button class="btn btn-amber btn-sm" onclick="pwaInstall()">⬇ Installer</button>
+          </div>
+        </div>
+
+        <div id="pwaInstalledCard" style="display:none;">
+          <div class="pwa-installed-row">
+            <span style="font-size:22px;">✅</span>
+            <div>
+              <div style="font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:1px;color:var(--green);">Application installée</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:2px;">SCAN PRO fonctionne comme une app native sur cet appareil</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row" style="margin-top:12px;">
+          <div class="sr-info"><div class="sr-label">Mode hors-ligne</div><div class="sr-sub">Cache l'application pour utilisation sans internet</div></div>
+          <div id="offlineStatus" style="font-size:10px;font-family:var(--display);font-weight:700;letter-spacing:1px;color:var(--text3);">—</div>
+        </div>
+
+        <div class="setting-row">
+          <div class="sr-info"><div class="sr-label">Version du cache</div><div class="sr-sub">Service Worker actif</div></div>
+          <div id="swVersion" style="font-size:10px;font-family:var(--mono);color:var(--text3);">—</div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="pwaUpdateCache()">↺ &nbsp;Mettre à jour le cache</button>
+          <button class="btn btn-sm btn-red" onclick="pwaClearCache()">🗑 &nbsp;Vider le cache</button>
+        </div>
       </div>
     </div>
 
@@ -2419,6 +2573,9 @@ function setTheme(t) {
   document.getElementById('btnLight').classList.toggle('active', t === 'light');
   document.getElementById('infoTheme').textContent = t === 'dark' ? 'Nuit 🌙' : 'Jour ☀️';
   try { localStorage.setItem('sp_theme', t); } catch(e){}
+  // Refresh meta theme-color + PWA icons on theme change
+  document.getElementById('metaThemeColor')?.setAttribute('content', t === 'dark' ? '#07080a' : '#f0a500');
+  if (typeof pwaSetupManifestAndIcons === 'function') pwaSetupManifestAndIcons();
 }
 
 function setScanlines(on) {
@@ -3678,7 +3835,463 @@ async function gdRestoreLastDrive(fileId, fileName) {
   });
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PWA — ICON GENERATION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const PWA_CACHE_NAME = 'scanpro-v1.4';
+
+function generateScanProIcon(size, theme) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const s = size;
+  const r = s * 0.18; // corner radius
+
+  // ── Background ──
+  const isDark = theme !== 'light';
+  const bgColor = isDark ? '#07080a' : '#ffffff';
+  const amber   = '#f0a500';
+  const amberD  = '#b87b00';
+
+  // Rounded rect background
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(s - r, 0);
+  ctx.quadraticCurveTo(s, 0, s, r);
+  ctx.lineTo(s, s - r);
+  ctx.quadraticCurveTo(s, s, s - r, s);
+  ctx.lineTo(r, s);
+  ctx.quadraticCurveTo(0, s, 0, s - r);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+
+  // Background gradient
+  const gBg = ctx.createLinearGradient(0, 0, 0, s);
+  gBg.addColorStop(0, isDark ? '#0d0f12' : '#f8f9fb');
+  gBg.addColorStop(1, isDark ? '#07080a' : '#eef0f4');
+  ctx.fillStyle = gBg;
+  ctx.fill();
+
+  // ── Amber accent strip (top) ──
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(s - r, 0);
+  ctx.quadraticCurveTo(s, 0, s, r);
+  ctx.lineTo(s, s * 0.08);
+  ctx.lineTo(0, s * 0.08);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+  const gTop = ctx.createLinearGradient(0, 0, s, 0);
+  gTop.addColorStop(0, amberD);
+  gTop.addColorStop(0.5, amber);
+  gTop.addColorStop(1, amberD);
+  ctx.fillStyle = gTop;
+  ctx.fill();
+  ctx.restore();
+
+  // ── Barcode lines (center) ──
+  const bx  = s * 0.12;           // barcode left
+  const bw  = s * 0.76;           // total width
+  const by  = s * 0.20;           // top
+  const bh  = s * 0.50;           // height
+  const bars = [4,1,3,1,2,1,4,1,3,2,1,1,2,1,3,1,4,1,2,1,3];
+  const unit = bw / bars.reduce((a,b)=>a+b, 0);
+  let cx2 = bx;
+  bars.forEach((w, i) => {
+    const isBar = i % 2 === 0;
+    if (isBar) {
+      // Alternate bar heights for visual depth
+      const varH = bh * (1 - (i % 4 === 0 ? 0 : 0.12));
+      const varY = by + (bh - varH);
+      const g = ctx.createLinearGradient(cx2, varY, cx2, varY + varH);
+      g.addColorStop(0, amber);
+      g.addColorStop(1, amberD);
+      ctx.fillStyle = g;
+      ctx.fillRect(cx2, varY, Math.max(1, w * unit - 0.5), varH);
+    }
+    cx2 += w * unit;
+  });
+
+  // ── Scan line overlay ──
+  const scanY = by + bh * 0.5;
+  const gScan = ctx.createLinearGradient(bx, scanY, bx + bw, scanY);
+  gScan.addColorStop(0, 'rgba(240,165,0,0)');
+  gScan.addColorStop(0.3, 'rgba(240,165,0,0.7)');
+  gScan.addColorStop(0.5, 'rgba(255,200,80,0.9)');
+  gScan.addColorStop(0.7, 'rgba(240,165,0,0.7)');
+  gScan.addColorStop(1, 'rgba(240,165,0,0)');
+  ctx.fillStyle = gScan;
+  ctx.fillRect(bx, scanY - s * 0.012, bw, s * 0.024);
+
+  // ── Corner scan marks ──
+  const m   = s * 0.07;  // margin
+  const ml  = s * 0.10;  // mark length
+  const mt  = Math.max(2, s * 0.025); // mark thickness
+  const mY  = by - s * 0.04;
+  const mY2 = by + bh + s * 0.04;
+  ctx.strokeStyle = amber;
+  ctx.lineWidth = mt;
+  ctx.lineCap = 'square';
+  // Top-left
+  ctx.beginPath(); ctx.moveTo(m, mY + ml); ctx.lineTo(m, mY); ctx.lineTo(m + ml, mY); ctx.stroke();
+  // Top-right
+  ctx.beginPath(); ctx.moveTo(s - m - ml, mY); ctx.lineTo(s - m, mY); ctx.lineTo(s - m, mY + ml); ctx.stroke();
+  // Bottom-left
+  ctx.beginPath(); ctx.moveTo(m, mY2 - ml); ctx.lineTo(m, mY2); ctx.lineTo(m + ml, mY2); ctx.stroke();
+  // Bottom-right
+  ctx.beginPath(); ctx.moveTo(s - m - ml, mY2); ctx.lineTo(s - m, mY2); ctx.lineTo(s - m, mY2 - ml); ctx.stroke();
+
+  // ── "SCAN PRO" Text ──
+  const textY = s * 0.84;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // "SCAN" in white/dark
+  ctx.fillStyle = isDark ? 'rgba(226,230,237,0.95)' : '#1a1d24';
+  ctx.font = `900 ${s * 0.155}px 'Arial Black', Arial, sans-serif`;
+  ctx.fillText('SCAN', s * 0.38, textY);
+
+  // "PRO" in amber
+  const scanW = ctx.measureText('SCAN').width;
+  ctx.fillStyle = amber;
+  ctx.font = `900 ${s * 0.155}px 'Arial Black', Arial, sans-serif`;
+  ctx.fillText(' PRO', s * 0.64, textY);
+
+  // Full text centered (redo properly)
+  ctx.font = `900 ${s * 0.155}px 'Arial Black', Arial, sans-serif`;
+  const full = 'SCAN PRO';
+  const totalW = ctx.measureText(full).width;
+  const scanOnly = ctx.measureText('SCAN ').width;
+
+  ctx.clearRect(0, textY - s * 0.12, s, s * 0.24);
+  ctx.fillStyle = isDark ? 'rgba(226,230,237,0.95)' : '#1a1d24';
+  ctx.fillText('SCAN', s / 2 - ctx.measureText(' PRO').width / 2, textY);
+  ctx.fillStyle = amber;
+  ctx.fillText(' PRO', s / 2 + ctx.measureText('SCAN').width / 2, textY);
+
+  // ── Bottom glow line ──
+  const gBottom = ctx.createLinearGradient(0, s * 0.92, s, s * 0.92);
+  gBottom.addColorStop(0, 'rgba(240,165,0,0)');
+  gBottom.addColorStop(0.5, `rgba(240,165,0,${isDark ? 0.35 : 0.2})`);
+  gBottom.addColorStop(1, 'rgba(240,165,0,0)');
+  ctx.fillStyle = gBottom;
+  ctx.fillRect(0, s * 0.92, s, s * 0.025);
+
+  return canvas.toDataURL('image/png');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PWA — MANIFEST + ICONS SETUP
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let _pwaInstallEvent = null;
+
+function pwaSetupManifestAndIcons() {
+  const theme   = document.documentElement.getAttribute('data-theme') || 'dark';
+  const bg      = theme === 'dark' ? '#07080a' : '#eef0f4';
+
+  // Generate icons
+  const icon512 = generateScanProIcon(512, theme);
+  const icon192 = generateScanProIcon(192, theme);
+  const icon180 = generateScanProIcon(180, theme);
+  const icon32  = generateScanProIcon(32,  theme);
+
+  // Set favicon
+  const fav = document.getElementById('faviconLink');
+  if (fav) { fav.href = icon32; fav.sizes = '32x32'; }
+
+  // Set apple-touch-icon
+  const ati = document.getElementById('appleTouchIcon180');
+  if (ati) { ati.href = icon180; ati.sizes = '180x180'; }
+
+  // Set MS tile
+  const ms = document.getElementById('msTile');
+  if (ms) ms.content = icon144 || icon192;
+
+  // Set PWA banner icon
+  const bannerIcon = document.getElementById('pwaBannerIcon');
+  if (bannerIcon) bannerIcon.innerHTML = `<img src="${icon180}" alt="SCAN PRO">`;
+
+  // Set install card icon
+  const picIcon = document.getElementById('picIcon');
+  if (picIcon) picIcon.innerHTML = `<img src="${icon180}" alt="SCAN PRO">`;
+
+  // Build manifest
+  const manifest = {
+    name:             'SCAN PRO',
+    short_name:       'SCAN PRO',
+    description:      'Scanner de codes-barres professionnel — catalogue, historique, Google Drive',
+    start_url:        window.location.href,
+    display:          'standalone',
+    orientation:      'portrait-primary',
+    background_color: bg,
+    theme_color:      '#f0a500',
+    lang:             'fr',
+    categories:       ['business', 'productivity', 'utilities'],
+    icons: [
+      { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    ],
+    shortcuts: [
+      {
+        name:       'Scanner',
+        short_name: 'Scan',
+        description:'Ouvrir le scanner directement',
+        url:        window.location.href + '#scanner',
+        icons:      [{ src: icon192, sizes: '192x192' }],
+      },
+      {
+        name:       'Catalogue',
+        short_name: 'Catalogue',
+        description:'Voir le catalogue',
+        url:        window.location.href + '#catalogue',
+        icons:      [{ src: icon192, sizes: '192x192' }],
+      },
+    ],
+    screenshots: [],
+  };
+
+  // Inject manifest as blob URL
+  const blob    = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const blobUrl = URL.createObjectURL(blob);
+  const link    = document.getElementById('pwaManifest');
+  if (link) link.href = blobUrl;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PWA — SERVICE WORKER
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function pwaRegisterSW() {
+  if (!('serviceWorker' in navigator)) {
+    pwaUpdateStatus('err', 'Non supporté', 'Ce navigateur ne supporte pas les PWA');
+    return;
+  }
+
+  const SW = `
+const CACHE = '${PWA_CACHE_NAME}';
+const APP_SHELL = ['${window.location.href}'];
+
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  e.waitUntil(
+    caches.open(CACHE).then(c => {
+      return Promise.allSettled(APP_SHELL.map(url => c.add(url).catch(()=>{})));
+    })
+  );
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => clients.claim())
+  );
+});
+
+self.addEventListener('fetch', e => {
+  const url = e.request.url;
+  // Skip non-GET, chrome-extension, and Drive/OFF API calls (those need network)
+  if (e.request.method !== 'GET') return;
+  if (url.includes('googleapis') || url.includes('accounts.google') || url.includes('gsi/client')) return;
+  if (url.includes('openfoodfacts')) {
+    // Network-first for product lookups
+    e.respondWith(
+      fetch(e.request).then(r => {
+        const clone = r.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return r;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+  // Cache-first for app shell (HTML, fonts, libs)
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      const network = fetch(e.request).then(r => {
+        if (r.ok) {
+          const clone = r.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return r;
+      }).catch(() => cached);
+      return cached || network;
+    })
+  );
+});
+
+self.addEventListener('message', e => {
+  if (e.data === 'skipWaiting') self.skipWaiting();
+  if (e.data === 'getVersion')  e.source.postMessage({ type:'version', cache: CACHE });
+});
+`;
+
+  try {
+    const blob  = new Blob([SW], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl, { scope: '/' })
+      .then(reg => {
+        pwaUpdateStatus('ok', 'Service Worker actif', 'Application disponible hors-ligne · Cache ' + PWA_CACHE_NAME);
+        document.getElementById('swVersion').textContent = PWA_CACHE_NAME;
+        document.getElementById('offlineStatus').textContent = '✅ Hors-ligne';
+        document.getElementById('offlineStatus').style.color = 'var(--green)';
+
+        // Listen for SW messages
+        navigator.serviceWorker.addEventListener('message', e => {
+          if (e.data?.type === 'version') {
+            document.getElementById('swVersion').textContent = e.data.cache || PWA_CACHE_NAME;
+          }
+        });
+        reg.active?.postMessage('getVersion');
+      })
+      .catch(err => {
+        // Blob SW may fail in some browsers — graceful degradation
+        console.warn('SW registration failed:', err);
+        pwaUpdateStatus('warn', 'Cache limité', 'Service Worker blob non supporté sur ce navigateur');
+        document.getElementById('offlineStatus').textContent = '⚠ Partiel';
+        document.getElementById('offlineStatus').style.color = 'var(--amber)';
+      });
+  } catch(e) {
+    pwaUpdateStatus('warn', 'Mode dégradé', 'PWA non disponible sur ce navigateur');
+  }
+}
+
+function pwaUpdateStatus(state, title, sub) {
+  const dot   = document.getElementById('pwaStatusDot');
+  const tEl   = document.getElementById('pwaStatusTitle');
+  const sEl   = document.getElementById('pwaStatusSub');
+  if (dot)  dot.className  = 'pwa-status-dot ' + state;
+  if (tEl)  tEl.textContent = title;
+  if (sEl)  sEl.textContent = sub;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PWA — INSTALL PROMPT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _pwaInstallEvent = e;
+  // Show install button in header
+  const btn = document.getElementById('pwaInstallBtn');
+  if (btn) btn.style.display = 'flex';
+  // Show install card in settings
+  const card = document.getElementById('pwaInstallCard');
+  if (card) card.style.display = '';
+  pwaUpdateStatus('warn', 'Prêt à installer', 'Cliquez sur "Installer" pour ajouter SCAN PRO à l\'écran d\'accueil');
+});
+
+window.addEventListener('appinstalled', () => {
+  _pwaInstallEvent = null;
+  const btn = document.getElementById('pwaInstallBtn');
+  if (btn) btn.style.display = 'none';
+  const ic  = document.getElementById('pwaInstallCard');
+  if (ic)   ic.style.display = 'none';
+  const ins = document.getElementById('pwaInstalledCard');
+  if (ins)  ins.style.display = '';
+  pwaUpdateStatus('ok', 'Application installée ✓', 'SCAN PRO est disponible sur votre écran d\'accueil');
+  toast('SCAN PRO installé ! ✓', 'ok');
+});
+
+async function pwaInstall() {
+  if (!_pwaInstallEvent) return;
+  _pwaInstallEvent.prompt();
+  const { outcome } = await _pwaInstallEvent.userChoice;
+  if (outcome === 'accepted') {
+    _pwaInstallEvent = null;
+    document.getElementById('pwaInstallBtn').style.display = 'none';
+  }
+}
+
+// iOS: show banner if not already installed and on Safari
+function pwaCheckIOSInstall() {
+  const isIOS    = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isSafari = /safari/i.test(navigator.userAgent) && !/chrome/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true;
+  if (isIOS && isSafari && !isStandalone) {
+    const dismissed = (() => { try { return localStorage.getItem('sp_pwa_banner_dismissed'); } catch(e){ return false; }})();
+    if (!dismissed) {
+      setTimeout(() => {
+        const banner = document.getElementById('pwaBanner');
+        if (banner) banner.style.display = 'flex';
+      }, 2500);
+    }
+    // Show installed card if standalone
+  } else if (isStandalone || window.matchMedia('(display-mode: standalone)').matches) {
+    const ins = document.getElementById('pwaInstalledCard');
+    if (ins) ins.style.display = '';
+    pwaUpdateStatus('ok', 'Application installée ✓', 'SCAN PRO tourne en mode app native');
+  }
+}
+
+function pwaDismissBanner() {
+  const banner = document.getElementById('pwaBanner');
+  if (banner) banner.style.display = 'none';
+  try { localStorage.setItem('sp_pwa_banner_dismissed', '1'); } catch(e){}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PWA — CACHE MANAGEMENT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function pwaUpdateCache() {
+  if (!navigator.serviceWorker?.controller) { toast('Service Worker non actif', 'warn'); return; }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      await reg.update();
+      navigator.serviceWorker.controller.postMessage('skipWaiting');
+    }
+    // Re-cache the current page
+    const cache = await caches.open(PWA_CACHE_NAME);
+    await cache.add(window.location.href);
+    toast('Cache mis à jour ✓', 'ok');
+  } catch(e) { toast('Erreur mise à jour cache', 'err'); }
+}
+
+async function pwaClearCache() {
+  if (!confirm('Vider le cache de l\'application ?\nL\'app nécessitera une connexion pour le prochain chargement.')) return;
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    toast('Cache vidé ✓', 'warn');
+    document.getElementById('offlineStatus').textContent = '⚠ Cache vidé';
+    document.getElementById('offlineStatus').style.color = 'var(--amber)';
+  } catch(e) { toast('Erreur suppression cache', 'err'); }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PWA — OFFLINE INDICATOR
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function pwaUpdateOnlineState() {
+  const online = navigator.onLine;
+  const dot    = document.getElementById('liveDot');
+  const lbl    = document.getElementById('liveLabel');
+  if (!online) {
+    if (dot) { dot.style.background = 'var(--red)'; dot.style.animation = 'none'; }
+    if (lbl) lbl.textContent = 'HORS-LIGNE';
+    toast('Mode hors-ligne', 'warn');
+  } else {
+    if (dot) { dot.style.background = ''; dot.style.animation = ''; }
+    if (lbl) lbl.textContent = 'EN LIGNE';
+  }
+}
+window.addEventListener('online',  () => { pwaUpdateOnlineState(); toast('Connexion rétablie ✓', 'ok'); });
+window.addEventListener('offline', () => pwaUpdateOnlineState());
+
+// Handle #hash shortcuts from manifest
+(function() {
+  const hash = window.location.hash.slice(1);
+  if (['scanner','catalogue','history','import','settings'].includes(hash)) {
+    window.addEventListener('DOMContentLoaded', () => setTimeout(() => goTab(hash), 200));
+  }
+})();
 window.addEventListener('DOMContentLoaded', () => {
+  // ── PWA bootstrap ──
+  pwaSetupManifestAndIcons();
+  pwaRegisterSW();
+  pwaCheckIOSInstall();
+  pwaUpdateOnlineState();
+
   // Restore theme
   const t = (() => { try { return localStorage.getItem('sp_theme') || 'dark'; } catch(e){ return 'dark'; } })();
   setTheme(t);
