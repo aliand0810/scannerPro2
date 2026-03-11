@@ -4069,92 +4069,47 @@ function pwaRegisterSW() {
     return;
   }
 
-  const SW = `
-const CACHE = '${PWA_CACHE_NAME}';
-const APP_SHELL = ['${window.location.href}'];
+  // Le fichier sw.js doit être dans le même dossier que scanner-articles.html
+  navigator.serviceWorker.register('./sw.js', { scope: './' })
+    .then(reg => {
+      console.log('[PWA] Service Worker enregistré ✓', reg.scope);
 
-self.addEventListener('install', e => {
-  self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE).then(c => {
-      return Promise.allSettled(APP_SHELL.map(url => c.add(url).catch(()=>{})));
-    })
-  );
-});
+      pwaUpdateStatus('ok', 'Service Worker actif ✓', 'Application disponible hors-ligne · Cache ' + PWA_CACHE_NAME);
+      document.getElementById('swVersion').textContent = PWA_CACHE_NAME;
+      document.getElementById('offlineStatus').textContent = '✅ Hors-ligne';
+      document.getElementById('offlineStatus').style.color = 'var(--green)';
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => clients.claim())
-  );
-});
-
-self.addEventListener('fetch', e => {
-  const url = e.request.url;
-  // Skip non-GET, chrome-extension, and Drive/OFF API calls (those need network)
-  if (e.request.method !== 'GET') return;
-  if (url.includes('googleapis') || url.includes('accounts.google') || url.includes('gsi/client')) return;
-  if (url.includes('openfoodfacts')) {
-    // Network-first for product lookups
-    e.respondWith(
-      fetch(e.request).then(r => {
-        const clone = r.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-        return r;
-      }).catch(() => caches.match(e.request))
-    );
-    return;
-  }
-  // Cache-first for app shell (HTML, fonts, libs)
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      const network = fetch(e.request).then(r => {
-        if (r.ok) {
-          const clone = r.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return r;
-      }).catch(() => cached);
-      return cached || network;
-    })
-  );
-});
-
-self.addEventListener('message', e => {
-  if (e.data === 'skipWaiting') self.skipWaiting();
-  if (e.data === 'getVersion')  e.source.postMessage({ type:'version', cache: CACHE });
-});
-`;
-
-  try {
-    const blob  = new Blob([SW], { type: 'application/javascript' });
-    const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl, { scope: '/' })
-      .then(reg => {
-        pwaUpdateStatus('ok', 'Service Worker actif', 'Application disponible hors-ligne · Cache ' + PWA_CACHE_NAME);
-        document.getElementById('swVersion').textContent = PWA_CACHE_NAME;
-        document.getElementById('offlineStatus').textContent = '✅ Hors-ligne';
-        document.getElementById('offlineStatus').style.color = 'var(--green)';
-
-        // Listen for SW messages
-        navigator.serviceWorker.addEventListener('message', e => {
-          if (e.data?.type === 'version') {
-            document.getElementById('swVersion').textContent = e.data.cache || PWA_CACHE_NAME;
+      // Mise à jour disponible ?
+      reg.addEventListener('updatefound', () => {
+        const newSW = reg.installing;
+        newSW?.addEventListener('statechange', () => {
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            toast('Mise à jour disponible — rechargez la page ↺', 'warn');
           }
         });
-        reg.active?.postMessage('getVersion');
-      })
-      .catch(err => {
-        // Blob SW may fail in some browsers — graceful degradation
-        console.warn('SW registration failed:', err);
-        pwaUpdateStatus('warn', 'Cache limité', 'Service Worker blob non supporté sur ce navigateur');
-        document.getElementById('offlineStatus').textContent = '⚠ Partiel';
-        document.getElementById('offlineStatus').style.color = 'var(--amber)';
       });
-  } catch(e) {
-    pwaUpdateStatus('warn', 'Mode dégradé', 'PWA non disponible sur ce navigateur');
-  }
+
+      // Recevoir la version depuis le SW
+      navigator.serviceWorker.addEventListener('message', e => {
+        if (e.data?.type === 'version') {
+          document.getElementById('swVersion').textContent = e.data.cache || PWA_CACHE_NAME;
+        }
+      });
+      setTimeout(() => reg.active?.postMessage('getVersion'), 500);
+    })
+    .catch(err => {
+      console.warn('[PWA] SW registration failed:', err);
+      // sw.js introuvable ou HTTPS manquant
+      const isHTTPS = location.protocol === 'https:' || location.hostname === 'localhost';
+      if (!isHTTPS) {
+        pwaUpdateStatus('err', 'HTTPS requis', 'Le Service Worker nécessite HTTPS · Actuellement en HTTP');
+      } else {
+        pwaUpdateStatus('warn', 'sw.js introuvable',
+          'Placez sw.js dans le même dossier que scanner-articles.html');
+      }
+      document.getElementById('offlineStatus').textContent = '⚠ Non actif';
+      document.getElementById('offlineStatus').style.color = 'var(--amber)';
+    });
 }
 
 function pwaUpdateStatus(state, title, sub) {
