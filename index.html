@@ -1071,12 +1071,51 @@ tbody tr:hover td{background:var(--surface2);}
   font-size:32px;line-height:1;
 }
 .produce-item-img img{width:50px;height:50px;border-radius:6px;object-fit:cover;}
+/* Emoji display replaces broken image approach */
+.produce-item-emoji{
+  font-size:38px;line-height:1;
+  width:52px;height:52px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:8px;
+  background:rgba(255,255,255,.04);
+  transition:transform .15s ease;
+}
 .produce-item-name{
   font-size:9px;font-family:var(--display);font-weight:700;
   letter-spacing:.5px;text-transform:uppercase;color:var(--text2);
   line-height:1.2;word-break:break-word;
 }
-.produce-item.selected .produce-item-name{color:var(--amber);}
+.produce-item:hover .produce-item-img-wrap .produce-item-svg,
+.produce-item.selected .produce-item-img-wrap .produce-item-svg{
+  transform:scale(1.08);
+}
+.produce-item-svg{
+  width:58px;height:58px;border-radius:10px;
+  object-fit:cover;
+  transition:transform .15s ease, box-shadow .15s ease;
+  display:block;
+}
+/* Image wrapper avec état de chargement */
+.produce-item-img-wrap{
+  position:relative;width:58px;height:58px;
+  border-radius:10px;overflow:hidden;flex-shrink:0;
+}
+.produce-item-img-wrap.loading::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.06) 50%,transparent 100%);
+  background-size:200% 100%;
+  animation:shimmer 1.4s infinite;
+}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.pi-spinner{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:16px;height:16px;
+  border:2px solid rgba(240,165,0,.3);
+  border-top-color:var(--amber);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+  pointer-events:none;
+}
 .produce-item-check{
   position:absolute;top:3px;right:3px;
   background:var(--amber);color:#000;
@@ -1775,6 +1814,7 @@ tbody tr:hover td{background:var(--surface2);}
           <button class="produce-tab active" onclick="switchProduceTab('legumes',this)">🥦 Légumes</button>
           <button class="produce-tab" onclick="switchProduceTab('fruits',this)">🍎 Fruits</button>
           <button class="produce-tab" onclick="switchProduceTab('herbes',this)">🌿 Herbes</button>
+          <button class="produce-tab" onclick="switchProduceTab('poissonnerie',this)">🐟 Poissonnerie</button>
         </div>
         <input class="inp produce-search" id="produceSearch" type="text"
                placeholder="🔍 Rechercher un produit…" oninput="renderProducePicker()" autocorrect="off">
@@ -4402,66 +4442,741 @@ window.addEventListener('offline', () => pwaUpdateOnlineState());
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // Images: Wikimedia Commons thumbnails (libres de droits)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PRODUCE IMAGE SYSTEM
+//  Stratégie : Wikipedia API → cache localStorage → SVG fallback
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const WIKI_CACHE_KEY   = 'sp_wiki_img_v8';  // v6 = poissonnerie
+const WIKI_CACHE_TTL   = 30 * 24 * 3600000;
+
+// Mots-clés de recherche supplémentaires pour la barre de recherche du picker
+// (permet de trouver "Céleri" en tapant "branche", "Avocat" en tapant "guacamole", etc.)
+const PRODUCE_ALIASES = {
+  'Céleri':         ['celeri', 'branche', 'céleri branche'],
+  'Ail':            ['gousse', 'bulbe'],
+  'Champignon':     ['paris', 'button', 'shiitake'],
+  'Ciboulette':     ['ciboulette', 'oignon tige'],
+  'Pomme de terre': ['patate', 'potato'],
+  'Haricot vert':   ['haricot', 'vert', 'mange-tout'],
+  'Petits pois':    ['pois', 'petit pois'],
+  'Avocat':         ['avocado', 'guacamole'],
+  'Clémentine':     ['clementine', 'mandarine'],
+  'Citron vert':    ['lime', 'limette', 'vert'],
+  'Myrtille':       ['blueberry', 'bleue'],
+  'Framboise':      ['raspberry'],
+  'Pastèque':       ['watermelon', 'melon eau'],
+  'Bette':          ['blette', 'côtes', 'chard'],
+  'Betterave':      ['beet', 'rouge'],
+  'Aubergine':      ['eggplant'],
+  'Courgette':      ['zucchini'],
+  'Poivron':        ['capsicum', 'pepper'],
+  'Épinard':        ['spinach'],
+  'Artichaut':      ['artichoke'],
+  'Fenouil':        ['anisé', 'bulbe'],
+  'Romarin':        ['rosemary'],
+  'Thym':           ['thymus'],
+  'Estragon':       ['tarragon'],
+  'Laurier':        ['bay', 'sauce'],
+  'Sauge':          ['sage'],
+  'Origan':         ['oregano', 'marjolaine'],
+  'Aneth':          ['dill', 'fenouil bâtard'],
+  // Exotiques légumes
+  'Patate douce':   ['sweet potato', 'patate', 'douce'],
+  'Butternut':      ['courge butternut', 'squash', 'musquée'],
+  'Potiron':        ['pumpkin', 'citrouille', 'courge'],
+  'Pak choï':       ['bok choy', 'chou chinois', 'pak choi'],
+  'Topinambour':    ['jerusalem artichoke', 'artichaut soleil'],
+  'Romanesco':      ['chou romanesco', 'brocoli romanesco'],
+  'Igname':          ['yam', 'tubercule'],
+  'Manioc':          ['cassava', 'tapioca', 'yuca'],
+  // Poissonnerie
+  'Saumon':          ['salmon', 'atlantique', 'fumé'],
+  'Thon':            ['tuna', 'listao', 'albacore'],
+  'Cabillaud':       ['cod', 'morue', 'gadus'],
+  'Crevette':        ['shrimp', 'gambas', 'bouquet'],
+  'Coquille Saint-Jacques': ['saint-jacques', 'coquille', 'pétoncle', 'noix', 'scallop'],
+  'Langoustine':     ['scampi', 'cigale'],
+  'Homard':          ['lobster', 'breton'],
+  'Poulpe':          ['octopus', 'pieuvre'],
+  'Calmar':          ['squid', 'encornet'],
+  'Seiche':          ['cuttlefish', 'supion'],
+  'Lieu noir':       ['pollock', 'colin noir'],
+  'Daurade':         ['dorade', 'bream'],
+  'Dorade royale':   ['daurade', 'gilthead'],
+  'Maquereau':       ['mackerel', 'scomber'],
+  'Gombo':           ['okra', 'gumbo', 'lady finger'],
+  // Exotiques fruits
+  'Litchi':         ['lychee', 'litchi chinois'],
+  'Fruit de la passion': ['passion fruit', 'maracuja', 'grenadille'],
+  'Papaye':         ['papaya', 'papayer'],
+  'Noix de coco':   ['coconut', 'coco', 'noix'],
+  'Goyave':         ['guava', 'goyavier'],
+  'Carambole':      ['star fruit', 'étoile', 'starfruit'],
+  'Pitaya':         ['dragon fruit', 'fruit dragon', 'pitahaya'],
+  'Ramboutan':      ['rambutan', 'ramboutan'],
+  'Kaki':           ['persimmon', 'plaqueminier'],
+  'Kumquat':        ['kumquat', 'mandarine naine'],
+  'Physalis':       ['cape gooseberry', 'alkékenge', 'amour en cage'],
+  'Jackfruit':      ['jaque', 'jacquier', 'fruit du jacquier'],
+  'Durian':         ['roi des fruits'],
+  'Longane':        ['longan', 'oeil du dragon'],
+  // Poissonnerie
+  'Saumon':         ['salmon', 'atlantique', 'fumé'],
+  'Thon':           ['tuna', 'thon rouge', 'germon'],
+  'Cabillaud':      ['cod', 'morue', 'stockfish'],
+  'Daurade':        ['sea bream', 'dorade', 'sparidé'],
+  'Bar':            ['loup', 'sea bass', 'loup de mer'],
+  'Maquereau':      ['mackerel', 'lisette'],
+  'Sardine':        ['sardines', 'pilchard'],
+  'Truite':         ['trout', 'salmonidé'],
+  'Merlu':          ['hake', 'colin', 'merluche'],
+  'Lieu noir':      ['pollock', 'colin noir', 'lieu'],
+  'Dorade royale':  ['gilt-head', 'sparidé', 'daurade'],
+  'Merlan':         ['whiting'],
+  'Rouget':         ['rouget-barbet', 'red mullet'],
+  'Crevette':       ['shrimp', 'gambas', 'bouquet'],
+  'Homard':         ['lobster', 'homard bleu', 'américain'],
+  'Crabe':          ['crab', 'tourteau', 'araignée'],
+  'Langoustine':    ['scampi', 'langoustines', 'cigale'],
+  'Langouste':      ['spiny lobster', 'langouste rouge'],
+  'Moule':          ['mussel', 'bouchot', 'moules'],
+  'Huître':         ['oyster', 'ostréiculture', 'creuse', 'plate'],
+  'Poulpe':         ['octopus', 'pieuvre', 'tentacules'],
+  'Calmar':         ['squid', 'encornet', 'chipiron'],
+  'Seiche':         ['cuttlefish', 'sèche'],
+  'Palourde':       ['clam', 'vongole', 'vénus'],
+  'Coque':          ['cockle', 'coques'],
+};
+
+// Cache mémoire (session) pour éviter les re-fetches dans la même session
+const _imgMemCache = {};
+
+// Liste des produits dont le cache était potentiellement incorrect (vider au démarrage)
+const WIKI_CACHE_INVALIDATE = ['Radis','Bette','Ail','Avocat','Orange','Céleri','Betterave','Navet','Poire','Grenade','Pêche','Basilic','Kiwi','Cerise'];
+
+function _invalidateBadCache() {
+  // Vider tout le cache : on a changé de Wikipedia FR → EN, toutes les URLs changent
+  try {
+    localStorage.removeItem(WIKI_CACHE_KEY);
+    Object.keys(_imgMemCache).forEach(k => delete _imgMemCache[k]);
+  } catch(e) {}
+}
+
+// Charge le cache depuis localStorage
+function _loadImgCache() {
+  try {
+    const raw = localStorage.getItem(WIKI_CACHE_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    // Nettoyer les entrées expirées
+    const now = Date.now();
+    let cleaned = false;
+    for (const k in data) {
+      if (now - (data[k].ts || 0) > WIKI_CACHE_TTL) {
+        delete data[k]; cleaned = true;
+      }
+    }
+    if (cleaned) {
+      try { localStorage.setItem(WIKI_CACHE_KEY, JSON.stringify(data)); } catch(e){}
+    }
+    return data;
+  } catch(e) { return {}; }
+}
+
+// Sauvegarde une URL dans le cache
+function _saveImgCache(name, url) {
+  _imgMemCache[name] = url;
+  try {
+    const data = _loadImgCache();
+    data[name] = { url, ts: Date.now() };
+    localStorage.setItem(WIKI_CACHE_KEY, JSON.stringify(data));
+  } catch(e) {}
+}
+
+// Récupère depuis le cache (mémoire ou localStorage)
+function _getCachedImg(name) {
+  if (_imgMemCache[name]) return _imgMemCache[name];
+  const data = _loadImgCache();
+  if (data[name]?.url) {
+    _imgMemCache[name] = data[name].url;
+    return data[name].url;
+  }
+  return null;
+}
+
+// SVG placeholder pendant le chargement
+function produceImgPlaceholder(emoji, cat) {
+  const colors = {
+    'Légumes':       ['#0f2210','#1c3d1c','#2a5a2a'],
+    'Fruits':        ['#2a1206','#4a2010','#6b3010'],
+    'Herbes':        ['#081a0e','#10321a','#1a5228'],
+    'Poissonnerie':  ['#061525','#0a2540','#0d3560'],
+  };
+  const [bg1, bg2, border] = colors[cat] || colors['Légumes'];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+    <defs>
+      <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="${bg1}"/>
+        <stop offset="100%" stop-color="${bg2}"/>
+      </linearGradient>
+    </defs>
+    <rect width="300" height="300" rx="24" fill="url(#g)"/>
+    <rect width="300" height="300" rx="24" fill="none" stroke="${border}" stroke-width="2" opacity="0.6"/>
+    <text x="150" y="170" font-size="170" text-anchor="middle" dominant-baseline="middle">${emoji}</text>
+  </svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+// Noms Wikipedia EN pour chaque produit
+// Wikipedia EN a des photos alimentaires (assiette/marché) vs FR qui montre souvent la plante botanique
+const WIKI_EN_NAMES = {
+  // ── Légumes classiques ──────────────────────────
+  'Salade':          'Lettuce',
+  'Tomate':          'Tomato',
+  'Carotte':         'Carrot',
+  'Courgette':       'Zucchini',
+  'Poivron':         'Bell pepper',
+  'Oignon':          'Onion',
+  'Ail':             'Garlic',
+  'Pomme de terre':  'Potato',
+  'Brocoli':         'Broccoli',
+  'Chou-fleur':      'Cauliflower',
+  'Épinard':         'Spinach',
+  'Concombre':       'Cucumber',
+  'Haricot vert':    'Green bean',
+  'Poireau':         'Leek',
+  'Céleri':          'Celery',
+  'Betterave':       'Beetroot',
+  'Aubergine':       'Eggplant',
+  'Champignon':      'Mushroom',
+  'Maïs':            'Corn on the cob',
+  'Radis':           'Radish',
+  'Navet':           'Turnip',
+  'Artichaut':       'Artichoke',
+  'Fenouil':         'Fennel',
+  'Bette':           'Chard',
+  'Laitue':          'Lettuce',
+  'Asperge':         'Asparagus',
+  'Petits pois':     'Pea',
+  'Chou':            'Cabbage',
+  // ── Légumes exotiques ───────────────────────────
+  'Patate douce':    'Sweet potato',
+  'Butternut':       'Butternut squash',
+  'Potiron':         'Pumpkin',
+  'Pak choï':        'Bok choy',
+  'Endive':          'Endive',
+  'Panais':          'Parsnip',
+  'Topinambour':     'Jerusalem artichoke',
+  'Romanesco':       'Romanesco broccoli',
+  'Pâtisson':        'Pattypan squash',
+  'Igname':          'Yam',
+  'Gombo':           'Okra',
+  'Poivron rouge':   'Red bell pepper',
+  'Poivron jaune':   'Yellow bell pepper',
+  'Manioc':          'Cassava',             // ← ajouté
+  'Courge':          'Winter squash',
+  'Brocolis tiges':  'Sprouting broccoli',
+  // ── Fruits classiques ───────────────────────────
+  'Pomme':           'Apple',
+  'Banane':          'Banana',
+  'Orange':          'Orange (fruit)',
+  'Fraise':          'Strawberry',
+  'Raisin':          'Grape',
+  'Poire':           'Pear',
+  'Pêche':           'Peach',
+  'Abricot':         'Apricot',
+  'Cerise':          'Cherry',
+  'Melon':           'Cantaloupe',
+  'Pastèque':        'Watermelon',
+  'Kiwi':            'Kiwifruit',
+  'Citron':          'Lemon',
+  'Mangue':          'Mango',
+  'Ananas':          'Pineapple',
+  'Framboise':       'Raspberry',
+  'Myrtille':        'Blueberry',
+  'Avocat':          'Avocado',
+  'Figue':           'Common fig',
+  'Prune':           'Plum',
+  'Grenade':         'Pomegranate',
+  'Clémentine':      'Clementine',
+  'Citron vert':     'Lime (fruit)',
+  // ── Fruits exotiques ────────────────────────────
+  'Litchi':          'Lychee',
+  'Fruit de la passion': 'Passion fruit',
+  'Papaye':          'Papaya',
+  'Noix de coco':    'Coconut',
+  'Goyave':          'Guava',
+  'Carambole':       'Carambola',
+  'Pitaya':          'Dragon fruit',
+  'Ramboutan':       'Rambutan',
+  'Kaki':            'Persimmon',
+  'Kumquat':         'Kumquat',
+  'Physalis':        'Cape gooseberry',
+  'Jackfruit':       'Jackfruit',
+  'Durian':          'Durian',
+  'Longane':         'Longan',
+  'Plantain':        'Cooking banana',
+  'Tamarind':        'Tamarind',
+  // ── Herbes ──────────────────────────────────────
+  'Basilic':         'Basil',
+  'Persil':          'Parsley',
+  'Ciboulette':      'Chives',
+  'Coriandre':       'Coriander',
+  'Menthe':          'Peppermint',
+  'Thym':            'Thyme',
+  'Romarin':         'Rosemary',
+  'Estragon':        'Tarragon',
+  'Laurier':         'Bay leaf',
+  'Sauge':           'Sage',
+  'Origan':          'Oregano',
+  'Aneth':           'Dill',
+  // ── Poissonnerie ────────────────────────────
+  'Saumon':          'Salmon',
+  'Thon':            'Tuna',
+  'Cabillaud':       'Cod',
+  'Daurade':         'Sea bream',
+  'Bar':             'European bass',
+  'Sole':            'Sole (fish)',
+  'Maquereau':       'Atlantic mackerel',
+  'Sardine':         'Sardine',
+  'Truite':          'Trout',
+  'Merlu':           'Hake',
+  'Lieu noir':       'Pollock',
+  'Dorade royale':   'Gilthead seabream',
+  'Merlan':          'Whiting',
+  'Rouget':          'Red mullet',
+  'Turbot':          'Turbot',
+  'Hareng':          'Herring',
+  'Anchois':         'Anchovy',
+  'Flétan':          'Halibut',
+  'Raie':            'Skate (fish)',
+  'Carpe':           'Common carp',
+  'Perche':          'Perch',
+  'Crevette':        'Shrimp',
+  'Homard':          'Lobster',
+  'Crabe':           'Crab',
+  'Langoustine':     'Langoustine',
+  'Langouste':       'Spiny lobster',
+  'Moule':           'Mussel',
+  'Huître':          'Oyster',
+  'Coquille Saint-Jacques': 'Scallop',
+  'Poulpe':          'Octopus',
+  'Calmar':          'Squid',
+  'Seiche':          'Cuttlefish',
+  'Palourde':        'Clam',
+  'Coque':           'Cockle',
+};
+
+// URLs directes Wikimedia Commons pour les articles dont Wikipedia retourne une mauvaise image
+// (plante botanique au lieu de l'aliment, illustration, etc.)
+// Format : thumbnail 400px depuis upload.wikimedia.org
+// On garde ici UNIQUEMENT les articles dont Wikipedia REST retourne une mauvaise image
+// Pour les poissons : l'API REST Wikipedia donne de bonnes photos, pas besoin d'override
+const WIKI_DIRECT_URLS = {
+  // ── Légumes / herbes (illustration botanique sans override) ──
+  'Manioc':      'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Cassava_-_single_tuber.jpg/400px-Cassava_-_single_tuber.jpg',
+  'Asperge':     'https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/Spargel_2.jpg/400px-Spargel_2.jpg',
+  'Bette':       'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Swiss_chard_bunch.jpg/400px-Swiss_chard_bunch.jpg',
+  'Topinambour': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Jerusalem_artichoke_roots.jpg/400px-Jerusalem_artichoke_roots.jpg',
+  'Igname':      'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/White_yam.jpg/400px-White_yam.jpg',
+  // ── Herbes ──────────────────────────────────────────────────
+  'Ciboulette':  'https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Chives_09.jpg/400px-Chives_09.jpg',
+  'Origan':      'https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Oregano-Bundle.jpg/400px-Oregano-Bundle.jpg',
+  'Estragon':    'https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/Tarragon_bundle.jpg/400px-Tarragon_bundle.jpg',
+  'Laurier':     'https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Bay_leaf_-_whole.jpg/400px-Bay_leaf_-_whole.jpg',
+  'Physalis':    'https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/PhysalisPeruviana.jpg/400px-PhysalisPeruviana.jpg',
+};
+
+// Wikipedia REST API summary → retourne la photo principale de l'article (infobox)
+async function fetchWikipediaImage(name) {
+  // 0. Override direct connu et fiable
+  if (WIKI_DIRECT_URLS[name]) return WIKI_DIRECT_URLS[name];
+
+  const title = WIKI_EN_NAMES[name] || name;
+  const slug  = encodeURIComponent(title.replace(/ /g, '_'));
+
+  try {
+    // 1. REST summary (photo infobox de l'article Wikipedia EN)
+    const r = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${slug}`,
+      { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(7000) }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const src = d?.thumbnail?.source || d?.originalimage?.source;
+      if (src) return src.replace(/\/\d+px-/, '/400px-');
+    }
+  } catch(e) {}
+
+  try {
+    // 2. Fallback : pageimages API Wikipedia EN
+    const r2 = await fetch(
+      'https://en.wikipedia.org/w/api.php?action=query'
+      + '&titles=' + encodeURIComponent(title)
+      + '&prop=pageimages&pithumbsize=400&format=json&origin=*',
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (r2.ok) {
+      const d2 = await r2.json();
+      const page = Object.values(d2?.query?.pages || {})[0];
+      if (page?.thumbnail?.source) return page.thumbnail.source;
+    }
+  } catch(e) {}
+
+  try {
+    // 3. Dernier recours : Wikimedia Commons search par mot-clé anglais
+    const kw = encodeURIComponent(title + ' food');
+    const r3 = await fetch(
+      `https://commons.wikimedia.org/w/api.php?action=query&list=search`
+      + `&srsearch=${kw}&srnamespace=6&srlimit=3&format=json&origin=*`,
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (r3.ok) {
+      const d3 = await r3.json();
+      const hits = d3?.query?.search || [];
+      for (const hit of hits) {
+        const fname = encodeURIComponent(hit.title.replace('File:', ''));
+        const r4 = await fetch(
+          `https://commons.wikimedia.org/w/api.php?action=query`
+          + `&titles=${encodeURIComponent(hit.title)}`
+          + `&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (r4.ok) {
+          const d4 = await r4.json();
+          const pg = Object.values(d4?.query?.pages || {})[0];
+          const url = pg?.imageinfo?.[0]?.thumburl;
+          if (url) return url;
+        }
+      }
+    }
+  } catch(e) {}
+
+  console.warn('[Wiki] Toutes les sources ont échoué pour :', name);
+  return null;
+}
+
+// Teste si une URL image est accessible (retourne une promesse bool)
+function _testImgUrl(url) {
+  return new Promise(resolve => {
+    if (!url || url.startsWith('data:')) { resolve(!!url); return; }
+    const img = new Image();
+    img.onload  = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+    setTimeout(() => resolve(false), 8000); // timeout 8s
+  });
+}
+
+// Fonction principale : retourne l'image (cache ou réseau), met à jour le DOM si async
+async function getProduceImage(name, cat, emoji, onLoaded) {
+  // 1. Cache hit → immédiat
+  const cached = _getCachedImg(name);
+  if (cached) {
+    if (onLoaded) onLoaded(cached);
+    return cached;
+  }
+
+  // 2. Placeholder immédiat pendant le fetch
+  const placeholder = produceImgPlaceholder(emoji, cat);
+
+  // 3. Fetch Wikipedia en arrière-plan + validation de l'URL
+  const doFetch = async () => {
+    const url = await fetchWikipediaImage(name);
+    if (url) {
+      const ok = await _testImgUrl(url);
+      if (ok) {
+        _saveImgCache(name, url);
+        return url;
+      }
+    }
+    // URL cassée ou inexistante → on cache le placeholder pour éviter de retenter
+    _saveImgCache(name, placeholder);
+    return placeholder;
+  };
+
+  if (onLoaded) {
+    doFetch().then(final => onLoaded(final));
+    return placeholder;
+  } else {
+    return await doFetch();
+  }
+}
+
+// Précharge les images du tab courant en arrière-plan (silencieux)
+function preloadProduceTab(tab) {
+  const items = PRODUCE_DB[tab] || [];
+  items.forEach(p => {
+    if (!_getCachedImg(p.name)) {
+      fetchWikipediaImage(p.name).then(url => {
+        if (url) _saveImgCache(p.name, url);
+      });
+    }
+  });
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PRODUCE PICKER RENDER (avec images async)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderProducePicker() {
+  const grid = document.getElementById('produceGrid');
+  if (!grid) return;
+  const q = (document.getElementById('produceSearch')?.value || '').toLowerCase().trim();
+
+  let items;
+  if (q) {
+    const allItems = [
+      ...PRODUCE_DB.legumes      .map(p=>({...p,_tab:'legumes'})),
+      ...PRODUCE_DB.fruits       .map(p=>({...p,_tab:'fruits'})),
+      ...PRODUCE_DB.herbes       .map(p=>({...p,_tab:'herbes'})),
+      ...PRODUCE_DB.poissonnerie .map(p=>({...p,_tab:'poissonnerie'})),
+    ];
+    items = allItems.filter(p => {
+      // Cherche dans : nom affiché + alias Wikipedia + alias supplémentaires
+      const wikiName = (WIKI_EN_NAMES[p.name] || '').toLowerCase();
+      const aliases  = (PRODUCE_ALIASES[p.name] || []).join(' ');
+      const haystack = `${p.name} ${wikiName} ${aliases}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  } else {
+    items = (PRODUCE_DB[_produceTab] || []).map(p=>({...p,_tab:_produceTab}));
+  }
+
+  if (!items.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text3);font-size:11px;">Aucun résultat</div>';
+    return;
+  }
+
+  window._produceItems = items;
+
+  // Rendu initial avec placeholder/cache
+  grid.innerHTML = items.map((p, i) => {
+    const sel = _produceSelected?.name === p.name;
+    const cached = _getCachedImg(p.name);
+    const placeholder = produceImgPlaceholder(p.emoji, p.cat);
+    const imgSrc = cached || placeholder;
+    const loading = !cached;
+    const ph64 = encodeURIComponent(placeholder);
+    return `<div class="produce-item${sel?' selected':''}" onclick="selectProduceByIdx(${i})" id="pi-${i}">
+      <div class="produce-item-img-wrap${loading?' loading':''}">
+        <img class="produce-item-svg" src="${imgSrc}" alt="${h(p.name)}" id="pi-img-${i}"
+          onerror="this.onerror=null;this.src=decodeURIComponent('${ph64}');this.parentElement.classList.remove('loading');var s=this.parentElement.querySelector('.pi-spinner');if(s)s.remove();">
+        ${loading ? `<div class="pi-spinner"></div>` : ''}
+      </div>
+      <div class="produce-item-name">${h(p.name)}</div>
+      <div class="produce-item-check">✓</div>
+    </div>`;
+  }).join('');
+
+  // Fetch async pour celles non encore en cache
+  items.forEach((p, i) => {
+    if (!_getCachedImg(p.name)) {
+      getProduceImage(p.name, p.cat, p.emoji, (url) => {
+        const imgEl  = document.getElementById('pi-img-' + i);
+        const wrap   = imgEl?.parentElement;
+        if (imgEl) {
+          // Test si l'URL est valide avant de l'appliquer
+          const testImg = new Image();
+          testImg.onload  = () => { imgEl.src = url; };
+          testImg.onerror = () => { /* garde le placeholder déjà affiché */ };
+          testImg.src = url;
+        }
+        if (wrap)  wrap.classList.remove('loading');
+        const spin = wrap?.querySelector('.pi-spinner');
+        if (spin) spin.remove();
+      });
+    }
+  });
+}
+
+function selectProduceByIdx(i) {
+  const p = window._produceItems?.[i];
+  if (!p) return;
+  selectProduce(p);
+}
+
+async function selectProduce(p) {
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch(e){return;} }
+  _produceSelected = p;
+
+  // Remplir le formulaire immédiatement avec le placeholder
+  const placeholder = produceImgPlaceholder(p.emoji, p.cat);
+  document.getElementById('fNom').value  = p.name;
+  document.getElementById('fCat').value  = p.cat;
+  document.getElementById('fType').value = p.unit;
+  document.getElementById('fImg').value  = placeholder;
+  previewImg();
+
+  // Mettre à jour la bannière avec placeholder
+  renderProducePicker();
+  updateProduceSelectedBanner(placeholder);
+
+  // Fetch Wikipedia en arrière-plan, mettre à jour quand disponible
+  getProduceImage(p.name, p.cat, p.emoji, (url) => {
+    // Mettre à jour le champ image et la prévisualisation
+    const fImg = document.getElementById('fImg');
+    if (fImg && _produceSelected?.name === p.name) {
+      fImg.value = url;
+      previewImg();
+    }
+    updateProduceSelectedBanner(url);
+  });
+}
+
+function updateProduceSelectedBanner(imgUrl) {
+  const banner  = document.getElementById('produceSelectedBanner');
+  const psbImg  = document.getElementById('psbImg');
+  const psbName = document.getElementById('psbName');
+  const psbSub  = document.getElementById('psbSub');
+  if (!_produceSelected) { banner.classList.remove('visible'); return; }
+  const p = _produceSelected;
+  banner.classList.add('visible');
+  const src = imgUrl || _getCachedImg(p.name) || produceImgPlaceholder(p.emoji, p.cat);
+  psbImg.innerHTML    = `<img src="${src}" alt="${h(p.name)}" style="width:56px;height:56px;border-radius:10px;object-fit:cover;display:block;">`;
+  psbName.textContent = p.name;
+  psbSub.textContent  = p.cat + ' · ' + p.unit;
+}
+
 const PRODUCE_DB = {
   legumes: [
-    { name:'Salade',       cat:'Légumes',  unit:'pièce', emoji:'🥬', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Single_leaf_of_Romaine_lettuce.jpg/120px-Single_leaf_of_Romaine_lettuce.jpg' },
-    { name:'Tomate',       cat:'Légumes',  unit:'kg',    emoji:'🍅', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Tomato_je.jpg/120px-Tomato_je.jpg' },
-    { name:'Carotte',      cat:'Légumes',  unit:'kg',    emoji:'🥕', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Vegetable-Carrot-Bundle-wStalks.jpg/120px-Vegetable-Carrot-Bundle-wStalks.jpg' },
-    { name:'Courgette',    cat:'Légumes',  unit:'pièce', emoji:'🥒', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Zucchini_-_Rhs.jpg/120px-Zucchini_-_Rhs.jpg' },
-    { name:'Poivron',      cat:'Légumes',  unit:'pièce', emoji:'🫑', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Sweet_pepper.jpg/120px-Sweet_pepper.jpg' },
-    { name:'Oignon',       cat:'Légumes',  unit:'kg',    emoji:'🧅', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Onion_on_white_background.jpg/120px-Onion_on_white_background.jpg' },
-    { name:'Ail',          cat:'Légumes',  unit:'tête',  emoji:'🧄', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Garlic_bulb_-_2.jpg/120px-Garlic_bulb_-_2.jpg' },
-    { name:'Pomme de terre',cat:'Légumes', unit:'kg',    emoji:'🥔', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Potato_and_cross_section.jpg/120px-Potato_and_cross_section.jpg' },
-    { name:'Brocoli',      cat:'Légumes',  unit:'pièce', emoji:'🥦', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/03/Fresh_made_Broccoli_Florets_%281%29.jpg/120px-Fresh_made_Broccoli_Florets_%281%29.jpg' },
-    { name:'Chou-fleur',   cat:'Légumes',  unit:'pièce', emoji:'⬜', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Cauliflower_2004_01_23.jpg/120px-Cauliflower_2004_01_23.jpg' },
-    { name:'Épinard',      cat:'Légumes',  unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Spinach_leaves.jpg/120px-Spinach_leaves.jpg' },
-    { name:'Concombre',    cat:'Légumes',  unit:'pièce', emoji:'🥒', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/A_small_cup_of_coffee.JPG/120px-A_small_cup_of_coffee.JPG' },
-    { name:'Haricot vert', cat:'Légumes',  unit:'kg',    emoji:'🫘', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f7/Green_beans.jpg/120px-Green_beans.jpg' },
-    { name:'Poireau',      cat:'Légumes',  unit:'botte', emoji:'🌱', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/ARS_leek.jpg/120px-ARS_leek.jpg' },
-    { name:'Céleri',       cat:'Légumes',  unit:'pièce', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Celery_cross_section.jpg/120px-Celery_cross_section.jpg' },
-    { name:'Betterave',    cat:'Légumes',  unit:'kg',    emoji:'🟣', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Rote_Bete.jpg/120px-Rote_Bete.jpg' },
-    { name:'Aubergine',    cat:'Légumes',  unit:'pièce', emoji:'🍆', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Solanum_melongena_34.jpg/120px-Solanum_melongena_34.jpg' },
-    { name:'Champignon',   cat:'Légumes',  unit:'kg',    emoji:'🍄', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/Champignons_de_Paris.jpg/120px-Champignons_de_Paris.jpg' },
-    { name:'Maïs',         cat:'Légumes',  unit:'pièce', emoji:'🌽', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Corn_Ear.jpg/120px-Corn_Ear.jpg' },
-    { name:'Radis',        cat:'Légumes',  unit:'botte', emoji:'🔴', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Radishes_with_stems.jpg/120px-Radishes_with_stems.jpg' },
-    { name:'Navet',        cat:'Légumes',  unit:'kg',    emoji:'⚪', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Turnip_2622027.jpg/120px-Turnip_2622027.jpg' },
-    { name:'Artichaut',    cat:'Légumes',  unit:'pièce', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Artichoke.jpg/120px-Artichoke.jpg' },
-    { name:'Fenouil',      cat:'Légumes',  unit:'pièce', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Fennel_bulb.jpg/120px-Fennel_bulb.jpg' },
-    { name:'Bette',        cat:'Légumes',  unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Swiss_Chard.jpg/120px-Swiss_Chard.jpg' },
+    { name:'Salade',        cat:'Légumes', unit:'pièce', emoji:'🥬' },
+    { name:'Tomate',        cat:'Légumes', unit:'kg',    emoji:'🍅' },
+    { name:'Carotte',       cat:'Légumes', unit:'kg',    emoji:'🥕' },
+    { name:'Courgette',     cat:'Légumes', unit:'pièce', emoji:'🥒' },
+    { name:'Poivron',       cat:'Légumes', unit:'pièce', emoji:'🫑' },
+    { name:'Oignon',        cat:'Légumes', unit:'kg',    emoji:'🧅' },
+    { name:'Ail',           cat:'Légumes', unit:'tête',  emoji:'🧄' },
+    { name:'Pomme de terre',cat:'Légumes', unit:'kg',    emoji:'🥔' },
+    { name:'Brocoli',       cat:'Légumes', unit:'pièce', emoji:'🥦' },
+    { name:'Chou-fleur',    cat:'Légumes', unit:'pièce', emoji:'🤍' },
+    { name:'Épinard',       cat:'Légumes', unit:'botte', emoji:'🌿' },
+    { name:'Concombre',     cat:'Légumes', unit:'pièce', emoji:'🥒' },
+    { name:'Haricot vert',  cat:'Légumes', unit:'kg',    emoji:'💚' },
+    { name:'Poireau',       cat:'Légumes', unit:'botte', emoji:'🌱' },
+    { name:'Céleri',        cat:'Légumes', unit:'pièce', emoji:'🌿' },
+    { name:'Betterave',     cat:'Légumes', unit:'kg',    emoji:'🟣' },
+    { name:'Aubergine',     cat:'Légumes', unit:'pièce', emoji:'🍆' },
+    { name:'Champignon',    cat:'Légumes', unit:'kg',    emoji:'🍄' },
+    { name:'Maïs',          cat:'Légumes', unit:'pièce', emoji:'🌽' },
+    { name:'Radis',         cat:'Légumes', unit:'botte', emoji:'🔴' },
+    { name:'Navet',         cat:'Légumes', unit:'kg',    emoji:'⚪' },
+    { name:'Artichaut',     cat:'Légumes', unit:'pièce', emoji:'💚' },
+    { name:'Fenouil',       cat:'Légumes', unit:'pièce', emoji:'🌿' },
+    { name:'Bette',         cat:'Légumes', unit:'botte', emoji:'🌿' },
+    { name:'Laitue',        cat:'Légumes', unit:'pièce', emoji:'🥗' },
+    { name:'Asperge',       cat:'Légumes', unit:'botte', emoji:'🌱' },
+    { name:'Petits pois',   cat:'Légumes', unit:'kg',    emoji:'🟢' },
+    { name:'Chou',          cat:'Légumes', unit:'pièce', emoji:'🥬' },
+    // Exotiques
+    { name:'Patate douce',  cat:'Légumes', unit:'kg',    emoji:'🍠' },
+    { name:'Butternut',     cat:'Légumes', unit:'pièce', emoji:'🎃' },
+    { name:'Potiron',       cat:'Légumes', unit:'pièce', emoji:'🎃' },
+    { name:'Pak choï',      cat:'Légumes', unit:'pièce', emoji:'🥬' },
+    { name:'Endive',        cat:'Légumes', unit:'pièce', emoji:'🥬' },
+    { name:'Panais',        cat:'Légumes', unit:'kg',    emoji:'🌿' },
+    { name:'Topinambour',   cat:'Légumes', unit:'kg',    emoji:'🥔' },
+    { name:'Romanesco',     cat:'Légumes', unit:'pièce', emoji:'🥦' },
+    { name:'Pâtisson',      cat:'Légumes', unit:'pièce', emoji:'🎃' },
+    { name:'Igname',        cat:'Légumes', unit:'kg',    emoji:'🍠' },
+    { name:'Manioc',        cat:'Légumes', unit:'kg',    emoji:'🌿' },
+    { name:'Gombo',         cat:'Légumes', unit:'kg',    emoji:'💚' },
+    { name:'Poivron rouge', cat:'Légumes', unit:'pièce', emoji:'🫑' },
+    { name:'Poivron jaune', cat:'Légumes', unit:'pièce', emoji:'🫑' },
   ],
   fruits: [
-    { name:'Pomme',        cat:'Fruits',   unit:'kg',    emoji:'🍎', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Red_Apple.jpg/120px-Red_Apple.jpg' },
-    { name:'Banane',       cat:'Fruits',   unit:'kg',    emoji:'🍌', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Bananas_white_background_DS.jpg/120px-Bananas_white_background_DS.jpg' },
-    { name:'Orange',       cat:'Fruits',   unit:'kg',    emoji:'🍊', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Oranges_and_orange_juice.jpg/120px-Oranges_and_orange_juice.jpg' },
-    { name:'Fraise',       cat:'Fruits',   unit:'barq.', emoji:'🍓', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/PerfectStrawberry.jpg/120px-PerfectStrawberry.jpg' },
-    { name:'Raisin',       cat:'Fruits',   unit:'kg',    emoji:'🍇', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Grape_Cluster.jpg/120px-Grape_Cluster.jpg' },
-    { name:'Poire',        cat:'Fruits',   unit:'kg',    emoji:'🍐', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Pears.jpg/120px-Pears.jpg' },
-    { name:'Pêche',        cat:'Fruits',   unit:'kg',    emoji:'🍑', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Autumn_Red_peaches.jpg/120px-Autumn_Red_peaches.jpg' },
-    { name:'Abricot',      cat:'Fruits',   unit:'kg',    emoji:'🟠', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Apricot_Freestone.jpg/120px-Apricot_Freestone.jpg' },
-    { name:'Cerise',       cat:'Fruits',   unit:'kg',    emoji:'🍒', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bb/Cherry_Stella444.jpg/120px-Cherry_Stella444.jpg' },
-    { name:'Melon',        cat:'Fruits',   unit:'pièce', emoji:'🍈', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Muskmelon_Fruit_on_Vine.jpg/120px-Muskmelon_Fruit_on_Vine.jpg' },
-    { name:'Pastèque',     cat:'Fruits',   unit:'pièce', emoji:'🍉', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/120px-PNG_transparency_demonstration_1.png' },
-    { name:'Kiwi',         cat:'Fruits',   unit:'kg',    emoji:'🥝', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/All_about_Kiwi_fruits.jpg/120px-All_about_Kiwi_fruits.jpg' },
-    { name:'Citron',       cat:'Fruits',   unit:'kg',    emoji:'🍋', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Citrus_limon_-_K%C3%B6hler%E2%80%93s_Medizinal-Pflanzen-074.jpg/120px-Citrus_limon_-_K%C3%B6hler%E2%80%93s_Medizinal-Pflanzen-074.jpg' },
-    { name:'Mangue',       cat:'Fruits',   unit:'pièce', emoji:'🥭', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Hapus_Mango.jpg/120px-Hapus_Mango.jpg' },
-    { name:'Ananas',       cat:'Fruits',   unit:'pièce', emoji:'🍍', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/Pineapple_and_cross_section.jpg/120px-Pineapple_and_cross_section.jpg' },
-    { name:'Framboise',    cat:'Fruits',   unit:'barq.', emoji:'🫐', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Big_juicy_raspberries_%28Unsplash%29.jpg/120px-Big_juicy_raspberries_%28Unsplash%29.jpg' },
-    { name:'Myrtille',     cat:'Fruits',   unit:'barq.', emoji:'🫐', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Blueberries_with_saucers.jpg/120px-Blueberries_with_saucers.jpg' },
-    { name:'Avocat',       cat:'Fruits',   unit:'pièce', emoji:'🥑', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Avocado.toothpick.arp.jpg/120px-Avocado.toothpick.arp.jpg' },
-    { name:'Figue',        cat:'Fruits',   unit:'kg',    emoji:'🟤', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Ficus_carica_-_fig.jpg/120px-Ficus_carica_-_fig.jpg' },
-    { name:'Prune',        cat:'Fruits',   unit:'kg',    emoji:'🍑', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/Plum_fruit.jpg/120px-Plum_fruit.jpg' },
+    { name:'Pomme',         cat:'Fruits',  unit:'kg',    emoji:'🍎' },
+    { name:'Banane',        cat:'Fruits',  unit:'kg',    emoji:'🍌' },
+    { name:'Orange',        cat:'Fruits',  unit:'kg',    emoji:'🍊' },
+    { name:'Fraise',        cat:'Fruits',  unit:'barq.', emoji:'🍓' },
+    { name:'Raisin',        cat:'Fruits',  unit:'kg',    emoji:'🍇' },
+    { name:'Poire',         cat:'Fruits',  unit:'kg',    emoji:'🍐' },
+    { name:'Pêche',         cat:'Fruits',  unit:'kg',    emoji:'🍑' },
+    { name:'Abricot',       cat:'Fruits',  unit:'kg',    emoji:'🟠' },
+    { name:'Cerise',        cat:'Fruits',  unit:'kg',    emoji:'🍒' },
+    { name:'Melon',         cat:'Fruits',  unit:'pièce', emoji:'🍈' },
+    { name:'Pastèque',      cat:'Fruits',  unit:'pièce', emoji:'🍉' },
+    { name:'Kiwi',          cat:'Fruits',  unit:'kg',    emoji:'🥝' },
+    { name:'Citron',        cat:'Fruits',  unit:'kg',    emoji:'🍋' },
+    { name:'Mangue',        cat:'Fruits',  unit:'pièce', emoji:'🥭' },
+    { name:'Ananas',        cat:'Fruits',  unit:'pièce', emoji:'🍍' },
+    { name:'Framboise',     cat:'Fruits',  unit:'barq.', emoji:'🫐' },
+    { name:'Myrtille',      cat:'Fruits',  unit:'barq.', emoji:'💙' },
+    { name:'Avocat',        cat:'Fruits',  unit:'pièce', emoji:'🥑' },
+    { name:'Figue',         cat:'Fruits',  unit:'kg',    emoji:'🟤' },
+    { name:'Prune',         cat:'Fruits',  unit:'kg',    emoji:'💜' },
+    { name:'Grenade',       cat:'Fruits',  unit:'pièce', emoji:'🔴' },
+    { name:'Clémentine',    cat:'Fruits',  unit:'kg',    emoji:'🍊' },
+    { name:'Citron vert',   cat:'Fruits',  unit:'kg',    emoji:'💛' },
+    // Exotiques
+    { name:'Litchi',        cat:'Fruits',  unit:'kg',    emoji:'🔴' },
+    { name:'Fruit de la passion', cat:'Fruits', unit:'pièce', emoji:'🟣' },
+    { name:'Papaye',        cat:'Fruits',  unit:'pièce', emoji:'🟠' },
+    { name:'Noix de coco',  cat:'Fruits',  unit:'pièce', emoji:'🥥' },
+    { name:'Goyave',        cat:'Fruits',  unit:'kg',    emoji:'🟢' },
+    { name:'Carambole',     cat:'Fruits',  unit:'pièce', emoji:'⭐' },
+    { name:'Pitaya',        cat:'Fruits',  unit:'pièce', emoji:'🐉' },
+    { name:'Ramboutan',     cat:'Fruits',  unit:'kg',    emoji:'🔴' },
+    { name:'Kaki',          cat:'Fruits',  unit:'pièce', emoji:'🟠' },
+    { name:'Kumquat',       cat:'Fruits',  unit:'kg',    emoji:'🟠' },
+    { name:'Physalis',      cat:'Fruits',  unit:'barq.', emoji:'🟡' },
+    { name:'Jackfruit',     cat:'Fruits',  unit:'pièce', emoji:'🟡' },
+    { name:'Durian',        cat:'Fruits',  unit:'pièce', emoji:'🟡' },
+    { name:'Longane',       cat:'Fruits',  unit:'kg',    emoji:'🤍' },
   ],
   herbes: [
-    { name:'Basilic',      cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Basil-Basilico-Ocimum_basilicum-albahaca.jpg/120px-Basil-Basilico-Ocimum_basilicum-albahaca.jpg' },
-    { name:'Persil',       cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Petroselinum_crispum_2.jpg/120px-Petroselinum_crispum_2.jpg' },
-    { name:'Ciboulette',   cat:'Herbes',   unit:'botte', emoji:'🌱', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Chives_in_flower.jpg/120px-Chives_in_flower.jpg' },
-    { name:'Coriandre',    cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Coriander_Flower_DSC_0098.jpg/120px-Coriander_Flower_DSC_0098.jpg' },
-    { name:'Menthe',       cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Mint-leaves-2007.jpg/120px-Mint-leaves-2007.jpg' },
-    { name:'Thym',         cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/ThymusVulgaris.jpg/120px-ThymusVulgaris.jpg' },
-    { name:'Romarin',      cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/Rosemary_bush.jpg/120px-Rosemary_bush.jpg' },
-    { name:'Estragon',     cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Artemisia_dracunculus_1.jpg/120px-Artemisia_dracunculus_1.jpg' },
-    { name:'Laurier',      cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/Laurus_nobilis.jpg/120px-Laurus_nobilis.jpg' },
-    { name:'Sauge',        cat:'Herbes',   unit:'botte', emoji:'🌿', img:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Salvia_officinalis1.jpg/120px-Salvia_officinalis1.jpg' },
+    { name:'Basilic',       cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Persil',        cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Ciboulette',    cat:'Herbes',        unit:'botte', emoji:'🌱' },
+    { name:'Coriandre',     cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Menthe',        cat:'Herbes',        unit:'botte', emoji:'🍃' },
+    { name:'Thym',          cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Romarin',       cat:'Herbes',        unit:'botte', emoji:'🌲' },
+    { name:'Estragon',      cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Laurier',       cat:'Herbes',        unit:'botte', emoji:'🍃' },
+    { name:'Sauge',         cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Origan',        cat:'Herbes',        unit:'botte', emoji:'🌿' },
+    { name:'Aneth',         cat:'Herbes',        unit:'botte', emoji:'🌿' },
+  ],
+  poissonnerie: [
+    // ── Poissons ──────────────────────────────
+    { name:'Saumon',        cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Thon',          cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Cabillaud',     cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Daurade',       cat:'Poissonnerie',  unit:'pièce', emoji:'🐠' },
+    { name:'Bar',           cat:'Poissonnerie',  unit:'pièce', emoji:'🐠' },
+    { name:'Sole',          cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    { name:'Maquereau',     cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    { name:'Sardine',       cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Truite',        cat:'Poissonnerie',  unit:'pièce', emoji:'🐠' },
+    { name:'Merlu',         cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Lieu noir',     cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Dorade royale', cat:'Poissonnerie',  unit:'pièce', emoji:'🐠' },
+    { name:'Merlan',        cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    { name:'Rouget',        cat:'Poissonnerie',  unit:'pièce', emoji:'🐠' },
+    { name:'Turbot',        cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    { name:'Hareng',        cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Anchois',       cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Flétan',        cat:'Poissonnerie',  unit:'kg',    emoji:'🐟' },
+    { name:'Raie',          cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    { name:'Carpe',         cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    { name:'Perche',        cat:'Poissonnerie',  unit:'pièce', emoji:'🐟' },
+    // ── Crustacés ─────────────────────────────
+    { name:'Crevette',      cat:'Poissonnerie',  unit:'kg',    emoji:'🦐' },
+    { name:'Homard',        cat:'Poissonnerie',  unit:'pièce', emoji:'🦞' },
+    { name:'Crabe',         cat:'Poissonnerie',  unit:'pièce', emoji:'🦀' },
+    { name:'Langoustine',   cat:'Poissonnerie',  unit:'kg',    emoji:'🦐' },
+    { name:'Langouste',     cat:'Poissonnerie',  unit:'pièce', emoji:'🦞' },
+    // ── Mollusques ────────────────────────────
+    { name:'Moule',         cat:'Poissonnerie',  unit:'kg',    emoji:'🐚' },
+    { name:'Huître',        cat:'Poissonnerie',  unit:'dz',    emoji:'🦪' },
+    { name:'Coquille Saint-Jacques', cat:'Poissonnerie', unit:'pièce', emoji:'🐚' },
+    { name:'Poulpe',        cat:'Poissonnerie',  unit:'kg',    emoji:'🐙' },
+    { name:'Calmar',        cat:'Poissonnerie',  unit:'kg',    emoji:'🦑' },
+    { name:'Seiche',        cat:'Poissonnerie',  unit:'kg',    emoji:'🦑' },
+    { name:'Palourde',      cat:'Poissonnerie',  unit:'kg',    emoji:'🐚' },
+    { name:'Coque',         cat:'Poissonnerie',  unit:'kg',    emoji:'🐚' },
   ],
 };
 
@@ -4486,7 +5201,8 @@ function toggleNoBarcodeMode() {
     cbInp.style.opacity = '0.5';
     if (!cbInp.value) cbInp.value = 'LF-' + Date.now().toString(36).toUpperCase();
     renderProducePicker();
-  } else {
+    // Précharger les images légumes dès l'ouverture
+    preloadProduceTab('legumes');
     cbReq.style.display = '';
     cbInp.placeholder   = 'Ex : 3017620422003';
     cbInp.readOnly      = false;
@@ -4504,83 +5220,17 @@ function switchProduceTab(tab, btn) {
   btn.classList.add('active');
   document.getElementById('produceSearch').value = '';
   renderProducePicker();
-}
-
-function renderProducePicker() {
-  const grid = document.getElementById('produceGrid');
-  if (!grid) return;
-  const q = (document.getElementById('produceSearch')?.value || '').toLowerCase().trim();
-
-  let items;
-  if (q) {
-    items = [
-      ...PRODUCE_DB.legumes.map(p=>({...p,_tab:'legumes'})),
-      ...PRODUCE_DB.fruits .map(p=>({...p,_tab:'fruits'})),
-      ...PRODUCE_DB.herbes .map(p=>({...p,_tab:'herbes'})),
-    ].filter(p => p.name.toLowerCase().includes(q));
-  } else {
-    items = (PRODUCE_DB[_produceTab] || []).map(p=>({...p,_tab:_produceTab}));
-  }
-
-  if (!items.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text3);font-size:11px;">Aucun résultat</div>';
-    return;
-  }
-
-  // Store items in a temp global so onclick can access by index
-  window._produceItems = items;
-
-  grid.innerHTML = items.map((p, i) => {
-    const sel = _produceSelected?.name === p.name;
-    return `<div class="produce-item${sel?' selected':''}" onclick="selectProduceByIdx(${i})">
-      <div class="produce-item-img">
-        <img src="${p.img}" alt="${h(p.name)}" onerror="this.outerHTML='<span style=font-size:32px;line-height:50px>${p.emoji}</span>'">
-      </div>
-      <div class="produce-item-name">${h(p.name)}</div>
-      <div class="produce-item-check">✓</div>
-    </div>`;
-  }).join('');
-}
-
-function selectProduceByIdx(i) {
-  const p = window._produceItems?.[i];
-  if (!p) return;
-  selectProduce(p);
-}
-
-function selectProduce(p) {
-  if (typeof p === 'string') { try { p = JSON.parse(p); } catch(e){return;} }
-  _produceSelected = p;
-
-  // Auto-fill form fields
-  document.getElementById('fNom').value  = p.name;
-  document.getElementById('fCat').value  = p.cat;
-  document.getElementById('fType').value = p.unit;
-  document.getElementById('fImg').value  = p.img;
-  previewImg();
-
-  // Update grid selection state
-  renderProducePicker();
-  updateProduceSelectedBanner();
-}
-
-function updateProduceSelectedBanner() {
-  const banner  = document.getElementById('produceSelectedBanner');
-  const psbImg  = document.getElementById('psbImg');
-  const psbName = document.getElementById('psbName');
-  const psbSub  = document.getElementById('psbSub');
-  if (!_produceSelected) { banner.classList.remove('visible'); return; }
-  const p = _produceSelected;
-  banner.classList.add('visible');
-  psbImg.innerHTML    = `<img src="${p.img}" alt="${h(p.name)}" onerror="this.outerHTML='<span style=font-size:30px>${p.emoji}</span>'">`;
-  psbName.textContent = p.name;
-  psbSub.textContent  = p.cat + ' · ' + p.unit;
+  // Précharger les images de ce tab en arrière-plan
+  preloadProduceTab(tab);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  DOM READY
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 window.addEventListener('DOMContentLoaded', () => {
+
+  // Vider le cache des images Wikipedia incorrectes
+  _invalidateBadCache();
 
   // ── PWA bootstrap ──
   pwaSetupManifestAndIcons();
