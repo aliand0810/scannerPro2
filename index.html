@@ -3473,6 +3473,7 @@ function gdOnToken(resp) {
   .then(u => {
     GD.profile = { name: u.name || u.given_name || 'Utilisateur', email: u.email || '', picture: u.picture || '' };
     gdSave();
+    localStorage.setItem('sp_gd_connected', '1'); // ← flag : reconnecter auto au prochain chargement
     gdRenderUI();
     toast('Connecté à Google Drive ✓', 'ok');
     if (GD.pendingAction) { const fn = GD.pendingAction; GD.pendingAction = null; fn(); }
@@ -3490,7 +3491,8 @@ function gdConnect() {
   gdSetStatus('busy', 'Connexion en cours…');
   if (!GD.tokenClient) gdInitTokenClient();
   if (!GD.tokenClient) { toast('Google Identity Services non chargé. Vérifiez votre connexion internet.', 'err'); gdSetStatus('off','Erreur'); return; }
-  GD.tokenClient.requestAccessToken({ prompt: 'consent' });
+  // 'select_account' = choisir le compte, sans redemander les permissions si déjà accordées
+  GD.tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 function gdDisconnect() {
@@ -3500,6 +3502,7 @@ function gdDisconnect() {
   GD.accessToken = null;
   GD.tokenExpiry = 0;
   GD.profile     = null;
+  localStorage.removeItem('sp_gd_connected'); // ← l'utilisateur se déconnecte volontairement
   gdSave();
   gdRenderUI();
   toast('Déconnecté de Google Drive', 'warn');
@@ -3509,11 +3512,11 @@ function gdDisconnect() {
 function gdEnsureToken(action) {
   if (GD.accessToken && Date.now() < GD.tokenExpiry) { action(); return; }
   GD.pendingAction = action;
-  // Force consent to ensure full scope is granted
   gdSetStatus('busy', 'Actualisation du token…');
   if (!GD.tokenClient) gdInitTokenClient();
   if (!GD.tokenClient) { toast('Google non chargé', 'err'); return; }
-  GD.tokenClient.requestAccessToken({ prompt: '' }); // silent refresh
+  // prompt: '' = silencieux si autorisations déjà accordées, sinon popup minimal
+  GD.tokenClient.requestAccessToken({ prompt: '' });
 }
 
 // ── Folder Management ────────────
@@ -3824,10 +3827,38 @@ function gdInit() {
   if (GD.clientId) gdInitTokenClient();
   gdRenderUI();
   gdUpdateLastSaveUI();
-  // Restore token client when GIS loads
-  if (typeof google !== 'undefined' && google?.accounts?.oauth2) {
-    gdInitTokenClient();
+
+  // ── Reconnexion silencieuse automatique au démarrage ─────────────────────
+  // Si l'utilisateur était connecté lors de la dernière session et ne s'est
+  // pas déconnecté volontairement, on tente un refresh silencieux dès que
+  // Google Identity Services est prêt (la lib GIS est chargée en async defer).
+  if (GD.clientId && localStorage.getItem('sp_gd_connected') === '1') {
+    gdSilentReconnect();
   }
+}
+
+// Tente un refresh de token sans popup (prompt: '') — fonctionne si :
+//  • L'utilisateur a une session Google active dans le navigateur
+//  • Les permissions ont déjà été accordées lors d'une session précédente
+// Retry toutes les 500ms pendant 10s le temps que la lib GIS charge.
+function gdSilentReconnect() {
+  let attempts = 0;
+  const maxAttempts = 20; // 20 × 500ms = 10s
+
+  function tryOnce() {
+    if (GD.accessToken && Date.now() < GD.tokenExpiry) return; // déjà connecté
+    if (typeof google === 'undefined' || !google?.accounts?.oauth2) {
+      if (++attempts < maxAttempts) setTimeout(tryOnce, 500);
+      return;
+    }
+    if (!GD.tokenClient) gdInitTokenClient();
+    if (!GD.tokenClient) return;
+    gdSetStatus('busy', 'Reconnexion…');
+    // prompt: '' = silencieux, pas de popup si le compte est toujours autorisé
+    GD.tokenClient.requestAccessToken({ prompt: '' });
+  }
+
+  setTimeout(tryOnce, 800); // Laisser 800ms au DOM + GIS pour charger
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4250,11 +4281,25 @@ function pwaSetupManifestAndIcons() {
     screenshots: [],
   };
 
-  // Inject manifest as blob URL
-  const blob    = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-  const blobUrl = URL.createObjectURL(blob);
-  const link    = document.getElementById('pwaManifest');
-  if (link) link.href = blobUrl;
+  // ── Injecter le manifest via SW (pas blob: URL = installable) ──
+  const manifestJson = JSON.stringify(manifest);
+
+  // Pointer le <link> vers manifest.json (servi par le SW)
+  const link = document.getElementById('pwaManifest');
+  if (link) link.href = './manifest.json';
+
+  // Envoyer le manifest au SW pour qu'il le mette en cache
+  function sendManifestToSW() {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'setManifest', json: manifestJson });
+  }
+  if (navigator.serviceWorker?.controller) {
+    sendManifestToSW();
+  } else {
+    navigator.serviceWorker?.ready.then(() => {
+      // Courte attente pour que controller soit assigné
+      setTimeout(sendManifestToSW, 300);
+    });
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4275,6 +4320,11 @@ function pwaRegisterSW() {
       document.getElementById('swVersion').textContent = PWA_CACHE_NAME;
       document.getElementById('offlineStatus').textContent = '✅ Hors-ligne';
       document.getElementById('offlineStatus').style.color = 'var(--green)';
+
+      // Renvoyer le manifest au SW dès qu'il est actif
+      navigator.serviceWorker.ready.then(() => {
+        setTimeout(() => pwaSetupManifestAndIcons(), 400);
+      });
 
       // Mise à jour disponible ?
       reg.addEventListener('updatefound', () => {
