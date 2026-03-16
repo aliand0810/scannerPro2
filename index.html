@@ -123,6 +123,36 @@ input,select,button,textarea{font-family:inherit;}
 @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
 
 .header-right{display:flex;align-items:center;gap:8px;}
+
+/* ── Voyant Drive header ── */
+.hdr-drive{
+  display:flex;align-items:center;gap:5px;
+  cursor:pointer;padding:4px 8px;border-radius:20px;
+  transition:background var(--tr);position:relative;
+}
+.hdr-drive:hover{background:var(--surface2);}
+.hdr-drive-led{
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
+  background:var(--text3);
+  transition:background .3s,box-shadow .3s;
+}
+.hdr-drive-led.on {background:#22c55e;box-shadow:0 0 7px #22c55e99;}
+.hdr-drive-led.off{background:#ef4444;box-shadow:0 0 7px #ef444499;}
+.hdr-drive-led.busy{background:var(--amber);box-shadow:0 0 7px var(--glow);animation:pulse-dot 1s linear infinite;}
+.hdr-drive-led.none{background:var(--text3);}
+.hdr-drive-info{
+  display:flex;flex-direction:column;gap:0px;
+  line-height:1.2;
+}
+.hdr-drive-lbl{
+  font-size:9px;font-family:var(--display);font-weight:700;
+  letter-spacing:.5px;text-transform:uppercase;
+  color:var(--text2);white-space:nowrap;
+}
+.hdr-drive-time{
+  font-size:8px;color:var(--text3);white-space:nowrap;
+  font-family:var(--mono);
+}
 .chip{
   background:var(--amber);color:#000;
   font-family:var(--display);font-weight:700;font-size:11px;
@@ -1270,6 +1300,13 @@ tbody tr:hover td{background:var(--surface2);}
     <span id="liveLabel">PRÊT</span>
   </div>
   <div class="header-right">
+    <div class="hdr-drive" id="hdrDrive" onclick="goTab('settings')" title="Google Drive">
+      <div class="hdr-drive-led none" id="hdrDriveLed"></div>
+      <div class="hdr-drive-info">
+        <span class="hdr-drive-lbl" id="hdrDriveLbl">Drive</span>
+        <span class="hdr-drive-time" id="hdrDriveTime"></span>
+      </div>
+    </div>
     <button class="pwa-install-btn" id="pwaInstallBtn" style="display:none;" onclick="pwaInstall()" title="Installer l'application">
       <span class="pwa-install-icon">⬇</span>
       <span class="pwa-install-txt">Installer</span>
@@ -3380,11 +3417,41 @@ function gdLoad() {
 
 // ── UI helpers ───────────────────
 function gdSetStatus(state, txt) {
+  // Voyant dans la section Réglages
   const dot = document.getElementById('gdDot');
   const lbl = document.getElementById('gdStatusTxt');
-  if (!dot || !lbl) return;
-  dot.className = 'gdrive-dot ' + state;
-  lbl.textContent = txt;
+  if (dot) dot.className = 'gdrive-dot ' + state;
+  if (lbl) lbl.textContent = txt;
+
+  // ── Voyant discret dans le header ──
+  const led  = document.getElementById('hdrDriveLed');
+  const hLbl = document.getElementById('hdrDriveLbl');
+  if (!led || !hLbl) return;
+  led.className = 'hdr-drive-led ' + (state === 'on' ? 'on' : state === 'off' ? 'off' : state === 'busy' ? 'busy' : 'none');
+  hLbl.textContent = state === 'on' ? 'Drive ✓' : state === 'busy' ? 'Drive…' : state === 'off' ? 'Drive' : 'Drive';
+  // Mettre à jour l'heure du dernier backup
+  gdUpdateHeaderTime();
+}
+
+// Met à jour la petite ligne de temps sous le libellé Drive dans le header
+function gdUpdateHeaderTime() {
+  const el = document.getElementById('hdrDriveTime');
+  if (!el) return;
+  try {
+    const d = JSON.parse(localStorage.getItem('sp_gd_last') || 'null');
+    if (!d?.date) { el.textContent = ''; return; }
+    const diff = Math.floor((Date.now() - new Date(d.date)) / 60000);
+    let since;
+    if (diff < 1)   since = 'à l\'instant';
+    else if (diff < 60) since = 'il y a ' + diff + 'min';
+    else if (diff < 1440) since = 'il y a ' + Math.floor(diff/60) + 'h';
+    else {
+      const h = new Date(d.date);
+      since = h.toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit'})
+             + ' ' + h.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+    }
+    el.textContent = since;
+  } catch(e) { el.textContent = ''; }
 }
 
 function gdRenderUI() {
@@ -3994,6 +4061,7 @@ async function gdAutoSave() {
 }
 
 function gdUpdateLastSaveUI() {
+  gdUpdateHeaderTime(); // ← sync le voyant header
   const el = document.getElementById('gdLastSaveInfo');
   if (!el) return;
   try {
@@ -4066,7 +4134,7 @@ async function gdRestoreLastDrive(fileId, fileName) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  PWA — ICON GENERATION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const PWA_CACHE_NAME = 'scanpro-v1.4';
+const PWA_CACHE_NAME = 'scanpro-v2.1'; // SW inline
 
 function generateScanProIcon(size, theme) {
   const canvas = document.createElement('canvas');
@@ -4281,29 +4349,14 @@ function pwaSetupManifestAndIcons() {
     screenshots: [],
   };
 
-  // ── Injecter le manifest via SW (pas blob: URL = installable) ──
+  // ── Injecter le manifest via data: URI (single-file, pas de fichier externe) ──
   const manifestJson = JSON.stringify(manifest);
-
-  // Pointer le <link> vers manifest.json (servi par le SW)
   const link = document.getElementById('pwaManifest');
-  if (link) link.href = './manifest.json';
-
-  // Envoyer le manifest au SW pour qu'il le mette en cache
-  function sendManifestToSW() {
-    navigator.serviceWorker?.controller?.postMessage({ type: 'setManifest', json: manifestJson });
-  }
-  if (navigator.serviceWorker?.controller) {
-    sendManifestToSW();
-  } else {
-    navigator.serviceWorker?.ready.then(() => {
-      // Courte attente pour que controller soit assigné
-      setTimeout(sendManifestToSW, 300);
-    });
-  }
+  if (link) link.href = 'data:application/manifest+json,' + encodeURIComponent(manifestJson);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  PWA — SERVICE WORKER
+//  PWA — SERVICE WORKER (inline)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function pwaRegisterSW() {
   if (!('serviceWorker' in navigator)) {
@@ -4311,49 +4364,101 @@ function pwaRegisterSW() {
     return;
   }
 
-  // Le fichier sw.js doit être dans le même dossier que scanner-articles.html
-  navigator.serviceWorker.register('./sw.js', { scope: './' })
-    .then(reg => {
-      console.log('[PWA] Service Worker enregistré ✓', reg.scope);
+  // ── Code du SW embarqué directement dans le HTML ──────────────────────────
+  const SW_CODE = `
+const CACHE      = 'scanpro-v2.1';
+const CACHE_CDN  = 'scanpro-cdn-v2.1';
+const PRECACHE   = [
+  self.registration.scope,
+  self.registration.scope + 'scanner-articles.html',
+  'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js',
+  'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap',
+];
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(c =>
+    Promise.allSettled(PRECACHE.map(u => c.add(u).catch(()=>{})))
+  ));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(ks => Promise.all(
+      ks.filter(k => k !== CACHE && k !== CACHE_CDN).map(k => caches.delete(k))
+    )).then(() => self.clients.claim())
+  );
+});
+self.addEventListener('fetch', e => {
+  const url = e.request.url;
+  if (e.request.method !== 'GET') return;
+  if (url.includes('accounts.google.com') || url.includes('googleapis.com') ||
+      url.includes('gsi/client') || url.includes('oauth2') || url.includes('token')) return;
+  if (url.includes('wikipedia.org') || url.includes('wikimedia.org')) return;
+  if (url.includes('openfoodfacts.org')) {
+    e.respondWith(fetch(e.request).then(r => {
+      if (r.ok) caches.open(CACHE).then(c => c.put(e.request, r.clone()));
+      return r;
+    }).catch(() => caches.match(e.request)));
+    return;
+  }
+  if (url.includes('cdn.jsdelivr.net') || url.includes('cdnjs.cloudflare.com') ||
+      url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
+    e.respondWith(fetch(e.request).then(r => {
+      if (r.ok) caches.open(CACHE_CDN).then(c => c.put(e.request, r.clone()));
+      return r;
+    }).catch(() => caches.match(e.request)));
+    return;
+  }
+  e.respondWith(caches.match(e.request).then(cached => {
+    const net = fetch(e.request).then(r => {
+      if (r.ok) caches.open(CACHE).then(c => c.put(e.request, r.clone()));
+      return r;
+    }).catch(() => cached);
+    return cached || net;
+  }));
+});
+self.addEventListener('message', e => {
+  if (e.data === 'skipWaiting')  { self.skipWaiting(); return; }
+  if (e.data === 'getVersion')   { e.source?.postMessage({ type:'version', cache:CACHE }); return; }
+  if (e.data === 'clearCache')   { caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))); }
+});
+`;
 
-      pwaUpdateStatus('ok', 'Service Worker actif ✓', 'Application disponible hors-ligne · Cache ' + PWA_CACHE_NAME);
-      document.getElementById('swVersion').textContent = PWA_CACHE_NAME;
+  // Créer le SW comme blob JS et l'enregistrer
+  const blob  = new Blob([SW_CODE], { type: 'application/javascript' });
+  const swUrl = URL.createObjectURL(blob);
+
+  // Portée = dossier du fichier HTML
+  const scope = window.location.pathname.replace(/[^/]*$/, '') || '/';
+
+  navigator.serviceWorker.register(swUrl, { scope })
+    .then(reg => {
+      console.log('[PWA] Service Worker inline enregistré ✓', reg.scope);
+      pwaUpdateStatus('ok', 'Service Worker actif ✓', 'Application disponible hors-ligne · Cache scanpro-v2.1');
+      document.getElementById('swVersion').textContent  = 'scanpro-v2.1';
       document.getElementById('offlineStatus').textContent = '✅ Hors-ligne';
       document.getElementById('offlineStatus').style.color = 'var(--green)';
 
-      // Renvoyer le manifest au SW dès qu'il est actif
-      navigator.serviceWorker.ready.then(() => {
-        setTimeout(() => pwaSetupManifestAndIcons(), 400);
-      });
-
-      // Mise à jour disponible ?
       reg.addEventListener('updatefound', () => {
-        const newSW = reg.installing;
-        newSW?.addEventListener('statechange', () => {
-          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-            toast('Mise à jour disponible — rechargez la page ↺', 'warn');
-          }
+        reg.installing?.addEventListener('statechange', function() {
+          if (this.state === 'installed' && navigator.serviceWorker.controller)
+            toast('Mise à jour disponible — rechargez ↺', 'warn');
         });
       });
-
-      // Recevoir la version depuis le SW
       navigator.serviceWorker.addEventListener('message', e => {
-        if (e.data?.type === 'version') {
-          document.getElementById('swVersion').textContent = e.data.cache || PWA_CACHE_NAME;
-        }
+        if (e.data?.type === 'version')
+          document.getElementById('swVersion').textContent = e.data.cache || 'scanpro-v2.1';
       });
       setTimeout(() => reg.active?.postMessage('getVersion'), 500);
     })
     .catch(err => {
       console.warn('[PWA] SW registration failed:', err);
-      // sw.js introuvable ou HTTPS manquant
       const isHTTPS = location.protocol === 'https:' || location.hostname === 'localhost';
-      if (!isHTTPS) {
-        pwaUpdateStatus('err', 'HTTPS requis', 'Le Service Worker nécessite HTTPS · Actuellement en HTTP');
-      } else {
-        pwaUpdateStatus('warn', 'sw.js introuvable',
-          'Placez sw.js dans le même dossier que scanner-articles.html');
-      }
+      pwaUpdateStatus(
+        isHTTPS ? 'warn' : 'err',
+        isHTTPS ? 'Service Worker non actif' : 'HTTPS requis',
+        isHTTPS ? 'Erreur d\'enregistrement SW : ' + err.message : 'Le Service Worker nécessite HTTPS'
+      );
       document.getElementById('offlineStatus').textContent = '⚠ Non actif';
       document.getElementById('offlineStatus').style.color = 'var(--amber)';
     });
