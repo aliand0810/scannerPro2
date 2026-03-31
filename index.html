@@ -1625,6 +1625,14 @@ tbody tr:hover td{background:var(--surface2);}
               <button class="btn btn-amber btn-sm" onclick="gdSaveClientId()">Enregistrer</button>
             </div>
           </div>
+          <div class="gdrive-setup" style="margin-top:8px;">
+            <span class="gdrive-setup-label">Adresse e-mail Google (connexion automatique)</span>
+            <div class="gdrive-setup-row">
+              <input class="inp" id="gdEmailHint" type="email" placeholder="vous@gmail.com" autocomplete="email">
+              <button class="btn btn-sm" onclick="gdSaveEmailHint()">Enregistrer</button>
+            </div>
+            <div style="font-size:10px;color:var(--text3);margin-top:4px;">Pré-sélectionne automatiquement votre compte Google à la connexion</div>
+          </div>
 
           <details class="gdrive-howto">
             <summary>Comment obtenir un Client ID Google ? ›</summary>
@@ -3378,15 +3386,18 @@ async function enrichImportedArticles() {
 //  GOOGLE DRIVE INTEGRATION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const GD = {
-  clientId:     '',
-  accessToken:  null,
-  tokenExpiry:  0,
-  profile:      null,   // { name, email, picture }
-  folderId:     null,   // null = Drive root
-  folderName:   'Racine de Drive',
-  tokenClient:  null,
-  pendingAction: null,  // function to call after token refresh
-  pickerSelected: null, // { id, name } during folder selection
+  clientId:      '',
+  accessToken:   null,
+  tokenExpiry:   0,
+  profile:       null,   // { name, email, picture }
+  folderId:      null,   // null = Drive root
+  folderName:    'Racine de Drive',
+  tokenClient:   null,
+  emailHint:     '',     // adresse préenregistrée → login_hint Google
+  pendingAction: null,   // function to call after token refresh
+  pickerSelected:null,   // { id, name } during folder selection
+  _autoSavePending: false,
+  _pendingSave:  false,  // save en attente si token expiré au moment d'une modif
 };
 
 const GD_SCOPE      = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
@@ -3401,6 +3412,7 @@ function gdSave() {
       folderId:   GD.folderId,
       folderName: GD.folderName,
       profile:    GD.profile,
+      emailHint:  GD.emailHint || '',
     }));
   } catch(e){}
 }
@@ -3412,7 +3424,16 @@ function gdLoad() {
     GD.folderId   = d.folderId   || null;
     GD.folderName = d.folderName || 'Racine de Drive';
     GD.profile    = d.profile    || null;
+    GD.emailHint  = d.emailHint  || '';
   } catch(e){}
+}
+function gdSaveEmailHint() {
+  const v = (document.getElementById('gdEmailHint')?.value || '').trim();
+  GD.emailHint = v;
+  gdSave();
+  // Réinitialiser le tokenClient avec le nouveau hint
+  if (GD.clientId) gdInitTokenClient();
+  toast(v ? '✓ Email enregistré — connexion auto activée' : 'Email effacé', 'ok');
 }
 
 // ── UI helpers ───────────────────
@@ -3461,6 +3482,10 @@ function gdRenderUI() {
   const connectBtn= document.getElementById('gdConnectBtn');
 
   if (cidInput) cidInput.value = GD.clientId;
+
+  // Afficher l'email préenregistré dans le champ
+  const emailInp = document.getElementById('gdEmailHint');
+  if (emailInp && GD.emailHint) emailInp.value = GD.emailHint;
 
   // Enable connect button if client ID is present
   if (connectBtn) connectBtn.disabled = !GD.clientId;
@@ -3515,11 +3540,13 @@ function gdSaveClientId() {
 // ── OAuth / Token Client ──────────
 function gdInitTokenClient() {
   if (!GD.clientId || typeof google === 'undefined' || !google?.accounts?.oauth2) return;
-  GD.tokenClient = google.accounts.oauth2.initTokenClient({
+  const cfg = {
     client_id: GD.clientId,
     scope:     GD_SCOPE,
     callback:  gdOnToken,
-  });
+  };
+  if (GD.emailHint) cfg.hint = GD.emailHint; // pré-sélection du compte Google
+  GD.tokenClient = google.accounts.oauth2.initTokenClient(cfg);
 }
 
 function gdOnToken(resp) {
@@ -3527,6 +3554,7 @@ function gdOnToken(resp) {
   if (resp.error) {
     toast('Erreur Google : ' + resp.error, 'err');
     gdSetStatus('off', 'Erreur de connexion');
+    GD._pendingSave = false;
     return;
   }
   GD.accessToken = resp.access_token;
@@ -3539,17 +3567,27 @@ function gdOnToken(resp) {
   .then(r => r.json())
   .then(u => {
     GD.profile = { name: u.name || u.given_name || 'Utilisateur', email: u.email || '', picture: u.picture || '' };
+    // Mémoriser l'email pour connexion auto future
+    if (u.email && !GD.emailHint) {
+      GD.emailHint = u.email;
+      const inp = document.getElementById('gdEmailHint');
+      if (inp) inp.value = u.email;
+    }
     gdSave();
-    localStorage.setItem('sp_gd_connected', '1'); // ← flag : reconnecter auto au prochain chargement
+    localStorage.setItem('sp_gd_connected', '1');
     gdRenderUI();
     toast('Connecté à Google Drive ✓', 'ok');
     if (GD.pendingAction) { const fn = GD.pendingAction; GD.pendingAction = null; fn(); }
+    // Exécuter les saves en attente
+    if (GD._pendingSave) { GD._pendingSave = false; gdAutoSave(); }
   })
   .catch(() => {
     GD.profile = { name: 'Utilisateur Google', email: '', picture: '' };
     gdSave();
+    localStorage.setItem('sp_gd_connected', '1');
     gdRenderUI();
     if (GD.pendingAction) { const fn = GD.pendingAction; GD.pendingAction = null; fn(); }
+    if (GD._pendingSave) { GD._pendingSave = false; gdAutoSave(); }
   });
 }
 
@@ -3558,8 +3596,9 @@ function gdConnect() {
   gdSetStatus('busy', 'Connexion en cours…');
   if (!GD.tokenClient) gdInitTokenClient();
   if (!GD.tokenClient) { toast('Google Identity Services non chargé. Vérifiez votre connexion internet.', 'err'); gdSetStatus('off','Erreur'); return; }
-  // 'select_account' = choisir le compte, sans redemander les permissions si déjà accordées
-  GD.tokenClient.requestAccessToken({ prompt: 'select_account' });
+  const opts = { prompt: 'select_account' };
+  if (GD.emailHint) opts.login_hint = GD.emailHint; // skip account picker si email connu
+  GD.tokenClient.requestAccessToken(opts);
 }
 
 function gdDisconnect() {
@@ -3582,8 +3621,9 @@ function gdEnsureToken(action) {
   gdSetStatus('busy', 'Actualisation du token…');
   if (!GD.tokenClient) gdInitTokenClient();
   if (!GD.tokenClient) { toast('Google non chargé', 'err'); return; }
-  // prompt: '' = silencieux si autorisations déjà accordées, sinon popup minimal
-  GD.tokenClient.requestAccessToken({ prompt: '' });
+  const opts = { prompt: '' };
+  if (GD.emailHint) opts.login_hint = GD.emailHint;
+  GD.tokenClient.requestAccessToken(opts);
 }
 
 // ── Folder Management ────────────
@@ -3921,8 +3961,9 @@ function gdSilentReconnect() {
     if (!GD.tokenClient) gdInitTokenClient();
     if (!GD.tokenClient) return;
     gdSetStatus('busy', 'Reconnexion…');
-    // prompt: '' = silencieux, pas de popup si le compte est toujours autorisé
-    GD.tokenClient.requestAccessToken({ prompt: '' });
+    const opts = { prompt: '' };
+    if (GD.emailHint) opts.login_hint = GD.emailHint;
+    GD.tokenClient.requestAccessToken(opts);
   }
 
   setTimeout(tryOnce, 800); // Laisser 800ms au DOM + GIS pour charger
@@ -3981,12 +4022,24 @@ function updateTicker() {
 let _gdAutoSaveTimer = null;
 
 function gdScheduleAutoSave() {
-  if (!GD.clientId || !GD.accessToken || Date.now() >= GD.tokenExpiry) return;
-  // Respect the auto-sync toggle
+  if (!GD.clientId) return;
+  // Respecter le toggle auto-sync
   const toggle = document.getElementById('gdAutoSyncToggle');
   if (toggle && !toggle.checked) return;
+
   GD._autoSavePending = true;
   updateTicker();
+
+  if (!GD.accessToken || Date.now() >= GD.tokenExpiry) {
+    // Token absent ou expiré → mettre la save en file d'attente
+    // et tenter une reconnexion silencieuse si l'utilisateur était connecté
+    GD._pendingSave = true;
+    if (localStorage.getItem('sp_gd_connected') === '1') {
+      gdSilentReconnect(); // relance automatique, save partira dans gdOnToken
+    }
+    return;
+  }
+
   clearTimeout(_gdAutoSaveTimer);
   _gdAutoSaveTimer = setTimeout(gdAutoSave, 4000);
 }
