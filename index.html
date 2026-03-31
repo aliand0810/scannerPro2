@@ -240,6 +240,28 @@ input,select,button,textarea{font-family:inherit;}
 .inp:focus{border-color:var(--amber);box-shadow:0 0 0 3px var(--amber-glow);}
 .inp::placeholder{color:var(--text3);}
 .inp-amber{color:var(--amber);}
+/* ── Barcode lookup in edit modal ── */
+.cb-lookup-row{display:flex;gap:6px;align-items:center;}
+.cb-lookup-row .inp{flex:1;}
+.btn-lookup{
+  flex-shrink:0;height:38px;padding:0 12px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);color:var(--amber);
+  font-size:14px;cursor:pointer;transition:all var(--tr);
+  display:flex;align-items:center;gap:5px;white-space:nowrap;
+}
+.btn-lookup:hover{border-color:var(--amber);background:var(--amber);color:#000;}
+.btn-lookup.loading{opacity:.6;pointer-events:none;}
+/* ── img URL field with fetch btn ── */
+.img-url-row{display:flex;gap:6px;align-items:center;}
+.img-url-row .inp{flex:1;}
+/* ── import image option ── */
+.import-img-toggle{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:var(--radius-sm);
+  background:var(--surface2);border:1px solid var(--border);
+  margin-bottom:10px;
+}
 select.inp{cursor:pointer;}
 
 /* ─────────────────────────────────────────
@@ -434,6 +456,24 @@ select.inp{cursor:pointer;}
   box-shadow:var(--shadow-sm);
 }
 .article-card:active{transform:translateY(0);}
+/* ── mode sélection ── */
+.article-card.selected{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber);}
+.article-card .card-sel-box{
+  display:none;position:absolute;top:6px;left:6px;z-index:4;
+  width:20px;height:20px;border-radius:5px;
+  border:2px solid var(--border);background:var(--surface2);
+  pointer-events:none;transition:all var(--tr);
+}
+.article-card.selected .card-sel-box{
+  background:var(--amber);border-color:var(--amber);
+}
+.article-card.selected .card-sel-box::after{
+  content:'✓';position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);font-size:11px;color:#000;font-weight:900;
+}
+body.select-mode .article-card .card-sel-box{display:block;}
+body.select-mode .article-card{cursor:pointer;}
+body.select-mode .article-card-btns{display:none !important;}
 .article-card-btns{
   position:absolute;top:5px;right:5px;
   display:flex;gap:3px;opacity:0;
@@ -1212,6 +1252,8 @@ tbody tr:hover td{background:var(--surface2);}
 }
 .ticker-inner{display:inline-block;animation:tick 30s linear infinite;}
 @keyframes tick{from{transform:translateX(100vw)}to{transform:translateX(-100%)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 /* ─────────────────────────────────────────
    PWA — INSTALL BUTTON & BANNER
 ───────────────────────────────────────── */
@@ -1391,6 +1433,16 @@ tbody tr:hover td{background:var(--surface2);}
     <input class="inp" id="searchIn" type="text" placeholder="🔍  Rechercher par nom ou code-barres…" oninput="renderCat()" autocorrect="off">
     <button class="btn btn-sm" onclick="clearSearch()" title="Effacer">✕</button>
     <button class="btn btn-green btn-sm" id="btnNew" onclick="openEdit(null)">+ Nouveau</button>
+    <button class="btn btn-sm" id="btnSelectMode" onclick="toggleSelectMode()" title="Sélectionner pour export">☑ Sélectionner</button>
+  </div>
+  <!-- Barre de sélection (visible en mode sélection) -->
+  <div id="selectBar" style="display:none;padding:8px 0;display:none;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
+    <span id="selectCount" style="font-size:11px;color:var(--text2);font-family:var(--display);font-weight:700;letter-spacing:1px;flex:1;">0 sélectionné(s)</span>
+    <button class="btn btn-sm" onclick="selectAll()">✅ Tout</button>
+    <button class="btn btn-sm" onclick="deselectAll()">⬜ Aucun</button>
+    <button class="btn btn-amber btn-sm" onclick="exportSelectedCSV()">↓ Exporter</button>
+    <button class="btn btn-sm btn-red" onclick="deleteSelected()">🗑 Supprimer</button>
+    <button class="btn btn-sm" onclick="toggleSelectMode()">✕ Annuler</button>
   </div>
 
   <!-- Category filters -->
@@ -1481,6 +1533,19 @@ tbody tr:hover td{background:var(--surface2);}
     <!-- Column mapping -->
     <div class="section-label" style="margin-top:4px;">Correspondance des colonnes</div>
     <div class="mapping-grid" id="mappingGrid"></div>
+
+    <!-- Image URL option -->
+    <div class="import-img-toggle" id="importImgBox" style="display:none;">
+      <span style="font-size:18px;">🖼</span>
+      <div style="flex:1;">
+        <div style="font-size:11px;font-family:var(--display);font-weight:700;letter-spacing:1px;color:var(--text);">Récupérer les images depuis les URLs</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">Utilise la colonne URL image pour afficher les photos dans le catalogue</div>
+      </div>
+      <label class="toggle" style="flex-shrink:0;">
+        <input type="checkbox" id="importImgToggle" checked>
+        <span class="tgl-track"></span>
+      </label>
+    </div>
 
     <!-- OFF Enrichissement -->
     <div class="enrich-box" id="enrichBox" style="display:none;">
@@ -1880,7 +1945,18 @@ tbody tr:hover td{background:var(--surface2);}
         </div>
         <div class="form-field" id="fCbField">
           <label class="form-label">Code-barres <span class="req" id="fCbReq">*</span></label>
-          <input class="inp inp-amber" id="fCb" type="text" placeholder="Ex : 3017620422003" autocomplete="off">
+          <div class="cb-lookup-row">
+            <input class="inp inp-amber" id="fCb" type="text" placeholder="Ex : 3017620422003" autocomplete="off" oninput="onCbInput()">
+            <button class="btn-lookup" id="btnLookupCb" onclick="lookupFromModal()" title="Rechercher infos via code-barres">🔍 Rechercher</button>
+          </div>
+          <div id="lookupStatus" style="font-size:10px;color:var(--text3);margin-top:3px;display:none;"></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">URL Image</label>
+          <div class="img-url-row">
+            <input class="inp" id="fImg" type="url" placeholder="https://…" oninput="previewImg()">
+            <button class="btn-lookup" onclick="fetchImgFromUrl()" title="Charger l'image depuis l'URL">⬇ Charger</button>
+          </div>
         </div>
         <div class="form-field">
           <label class="form-label">Prix (€)</label>
@@ -1909,10 +1985,6 @@ tbody tr:hover td{background:var(--surface2);}
         <div class="form-field">
           <label class="form-label">Statut</label>
           <select class="inp" id="fActif"><option value="Oui">Actif</option><option value="Non">Inactif</option></select>
-        </div>
-        <div class="form-field">
-          <label class="form-label">URL Image</label>
-          <input class="inp" id="fImg" type="url" placeholder="https://…" oninput="previewImg()">
         </div>
       </div>
       <div class="img-preview" id="imgPreview"><img id="imgPreviewTag" alt=""></div>
@@ -2465,14 +2537,106 @@ function deleteArticle() {
   toast('Article supprimé', 'err');
 }
 
+function deleteSelected() {
+  if (_selected.size === 0) { toast('Aucun article sélectionné', 'warn'); return; }
+  const n = _selected.size;
+  showConfirmModal(
+    `🗑 Supprimer ${n} article${n > 1 ? 's' : ''} ?`,
+    `Cette action est irréversible. Les ${n} article${n > 1 ? 's sélectionnés seront' : ' sélectionné sera'} définitivement supprimé${n > 1 ? 's' : ''}.`,
+    'var(--red)',
+    `Supprimer ${n} article${n > 1 ? 's' : ''}`,
+    () => {
+      // Supprimer du plus grand index au plus petit pour éviter les décalages
+      const sorted = [..._selected].sort((a, b) => b - a);
+      sorted.forEach(i => catalogue.splice(i, 1));
+      _selected.clear();
+      toggleSelectMode();
+      updateChip(); renderStats(); renderCat(); renderFilters();
+      saveCat();
+      toast(`${n} article${n > 1 ? 's' : ''} supprimé${n > 1 ? 's' : ''}`, 'warn');
+    }
+  );
+}
+
+function clearAll() {
+  showConfirmModal(
+    '⚠️ Vider tout le catalogue ?',
+    'Tous les articles seront définitivement supprimés. Cette action est irréversible.',
+    'var(--red)',
+    'Vider le catalogue',
+    () => {
+      catalogue = [];
+      updateChip(); renderStats(); renderCat(); renderFilters();
+      try { localStorage.removeItem('sp_cat'); } catch(e){}
+      toast('Catalogue vidé', 'warn');
+    }
+  );
+}
+
+// ── Modale de confirmation générique ─────────────────────────────────────────
+function showConfirmModal(title, body, accentColor, confirmLabel, onConfirm) {
+  // Supprimer une ancienne modale si présente
+  document.getElementById('confirmModalOverlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'confirmModalOverlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+    animation:fadeIn .15s ease;
+  `;
+
+  overlay.innerHTML = `
+    <div style="
+      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+      max-width:380px;width:100%;padding:24px;box-shadow:var(--shadow-lg);
+      animation:slideUp .2s ease;
+    ">
+      <div style="font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:1px;
+                  color:var(--text);margin-bottom:10px;">${title}</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:20px;">${body}</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="document.getElementById('confirmModalOverlay').remove()"
+          style="padding:8px 18px;border-radius:var(--radius-sm);border:1px solid var(--border);
+                 background:var(--surface2);color:var(--text);cursor:pointer;
+                 font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:1px;">
+          Annuler
+        </button>
+        <button id="confirmModalOk"
+          style="padding:8px 18px;border-radius:var(--radius-sm);border:none;
+                 background:${accentColor};color:#fff;cursor:pointer;
+                 font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:1px;">
+          ${confirmLabel}
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('confirmModalOk').addEventListener('click', () => {
+    overlay.remove();
+    onConfirm();
+  });
+  // Focus sur le bouton Annuler par défaut (évite suppression accidentelle)
+  setTimeout(() => overlay.querySelector('button')?.focus(), 50);
+}
+
 function deleteByIdx(idx, e) {
   e && e.stopPropagation();
   if (!perms().canDel) return;
-  if (!confirm('Supprimer cet article ?')) return;
-  catalogue.splice(idx, 1);
-  updateChip(); renderCat(); renderStats(); renderFilters();
-  saveCat();
-  toast('Article supprimé', 'err');
+  const nom = catalogue[idx]?.['Nom'] || 'cet article';
+  showConfirmModal(
+    '🗑 Supprimer l\'article ?',
+    `<strong>${h(nom)}</strong> sera définitivement supprimé.`,
+    'var(--red)',
+    'Supprimer',
+    () => {
+      catalogue.splice(idx, 1);
+      updateChip(); renderCat(); renderStats(); renderFilters();
+      saveCat();
+      toast('Article supprimé', 'warn');
+    }
+  );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2574,21 +2738,25 @@ function buildMapping() {
     { key: 'DLC',         req: false },
     { key: 'Promo',       req: false },
     { key: 'Actif',       req: false },
+    { key: '_img',        req: false, label: 'URL Image (photo)' },
   ];
 
   const grid = document.getElementById('mappingGrid');
   grid.innerHTML = FIELDS.map(f => {
-    // Auto-detect best matching column header
-    const auto = csvHeaders.find(ch => mapHeader(ch) === f.key) || '';
+    const auto = csvHeaders.find(ch => mapHeader(ch) === f.key || ch.toLowerCase().includes('image') && f.key === '_img') || '';
     const opts = ['', ...csvHeaders].map(ch =>
       `<option value="${h(ch)}" ${ch === auto ? 'selected' : ''}>${ch ? h(ch) : '— ignorer —'}</option>`
     ).join('');
-    // Use data-field attribute — avoids ALL ID sanitization issues
     return `<div class="map-field">
-      <label class="map-label">${h(f.key)}${f.req ? ' <span class="map-req">*</span>' : ''}</label>
+      <label class="map-label">${h(f.label || f.key)}${f.req ? ' <span class="map-req">*</span>' : ''}</label>
       <select class="inp" data-field="${h(f.key)}">${opts}</select>
     </div>`;
   }).join('');
+
+  // Afficher le toggle image si une colonne image est détectée
+  const hasImg = csvHeaders.some(h => h.toLowerCase().includes('image') || h.toLowerCase().includes('img') || h.toLowerCase().includes('photo'));
+  const imgBox = document.getElementById('importImgBox');
+  if (imgBox) imgBox.style.display = hasImg ? '' : 'none';
 }
 
 function getMapping() {
@@ -2630,6 +2798,12 @@ function doImport() {
       'Promo':       mapping['Promo']      ? (row[mapping['Promo']]      || '').trim() : '0',
       'Actif':       mapping['Actif']      ? (row[mapping['Actif']]      || '').trim() : 'Oui',
     };
+    // Récupérer l'image URL si mappée et toggle activé
+    const fetchImgs = document.getElementById('importImgToggle')?.checked !== false;
+    if (fetchImgs && mapping['_img']) {
+      const imgUrl = (row[mapping['_img']] || '').trim();
+      if (imgUrl) art['_img'] = imgUrl;
+    }
 
     const existIdx = findIdxByCB(cb);
     if (existIdx >= 0) {
@@ -2687,7 +2861,6 @@ function exportCSV() {
   const rows = catalogue.map(a =>
     COLS.map(c => {
       let v = String(a[c] || '');
-      // Escape quotes and wrap if contains separator
       if (v.includes('"')) v = v.replace(/"/g,'""');
       if (v.includes(';') || v.includes('\n') || v.includes('"')) v = '"' + v + '"';
       return v;
@@ -2697,12 +2870,166 @@ function exportCSV() {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'catalogue_' + new Date().toISOString().slice(0,10) + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
+  a.href = url; a.download = 'catalogue_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click(); URL.revokeObjectURL(url);
   document.getElementById('exportNote').textContent = catalogue.length + ' articles exportés ✓';
   setTimeout(() => document.getElementById('exportNote').textContent = '', 3000);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  SÉLECTION & EXPORT PARTIEL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let _selectMode = false;
+let _selected   = new Set(); // indices catalogue
+
+function toggleSelectMode() {
+  _selectMode = !_selectMode;
+  _selected.clear();
+  document.body.classList.toggle('select-mode', _selectMode);
+  const bar = document.getElementById('selectBar');
+  const btn = document.getElementById('btnSelectMode');
+  if (bar) bar.style.display = _selectMode ? 'flex' : 'none';
+  if (btn) btn.classList.toggle('btn-amber', _selectMode);
+  updateSelectCount();
+  renderCat();
+}
+
+function toggleCardSelect(idx, e) {
+  e?.stopPropagation();
+  if (_selected.has(idx)) _selected.delete(idx); else _selected.add(idx);
+  // Toggle selected class on card directly (no full re-render)
+  const card = document.querySelector(`.article-card[data-idx="${idx}"]`);
+  if (card) card.classList.toggle('selected', _selected.has(idx));
+  updateSelectCount();
+}
+
+function selectAll() {
+  const q = (document.getElementById('searchIn')?.value || '').toLowerCase();
+  catalogue.forEach((a, i) => {
+    const match = !q || (a['Nom']||'').toLowerCase().includes(q) ||
+                  (a['Code-barres']||'').toLowerCase().includes(q) ||
+                  (a['Catégorie']||'').toLowerCase().includes(q);
+    if (!activeFilter || a['Catégorie'] === activeFilter) {
+      if (match) _selected.add(i);
+    }
+  });
+  updateSelectCount(); renderCat();
+}
+
+function deselectAll() { _selected.clear(); updateSelectCount(); renderCat(); }
+
+function updateSelectCount() {
+  const el = document.getElementById('selectCount');
+  if (el) el.textContent = _selected.size + ' sélectionné' + (_selected.size > 1 ? 's' : '');
+}
+
+function exportSelectedCSV() {
+  const items = _selected.size > 0
+    ? [..._selected].map(i => catalogue[i]).filter(Boolean)
+    : catalogue;
+  if (!items.length) { toast('Aucun article sélectionné', 'warn'); return; }
+  const COLS = ['Nom','Code-barres','Prix','Stock','Catégorie','Type','DLC','Promo','Actif'];
+  const csv = '\uFEFF' + COLS.join(';') + '\n' + items.map(a =>
+    COLS.map(c => {
+      let v = String(a[c] || '');
+      if (v.includes('"')) v = v.replace(/"/g,'""');
+      if (v.includes(';') || v.includes('\n') || v.includes('"')) v = '"' + v + '"';
+      return v;
+    }).join(';')
+  ).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'selection_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast(`${items.length} article${items.length>1?'s':''} exporté${items.length>1?'s':''}`, 'ok');
+  toggleSelectMode();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  LOOKUP BARCODE DANS MODAL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function onCbInput() {
+  // Activer le bouton recherche si code assez long
+  const cb  = (document.getElementById('fCb')?.value || '').trim();
+  const btn = document.getElementById('btnLookupCb');
+  if (btn) btn.style.opacity = cb.length >= 8 ? '1' : '0.45';
+}
+
+async function lookupFromModal() {
+  const cb  = (document.getElementById('fCb')?.value || '').trim();
+  if (!cb || cb.length < 4) { toast('Entrez un code-barres valide', 'warn'); return; }
+  const st  = document.getElementById('lookupStatus');
+  const btn = document.getElementById('btnLookupCb');
+  if (btn) btn.classList.add('loading');
+  if (st)  { st.style.display = ''; st.textContent = '🔍 Recherche en cours…'; st.style.color = 'var(--text3)'; }
+
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(cb)}.json`,
+      { signal: AbortSignal.timeout(8000) });
+    const d = await r.json();
+
+    if (d.status !== 1 || !d.product) {
+      if (st) { st.textContent = '⚠ Produit introuvable dans Open Food Facts'; st.style.color = 'var(--amber)'; }
+      toast('Produit non trouvé', 'warn');
+      return;
+    }
+    const p = d.product;
+
+    // Remplir uniquement les champs vides (ne pas écraser ce que l'utilisateur a saisi)
+    const fill = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && !el.value.trim() && val) el.value = val;
+    };
+
+    fill('fNom',   p.product_name_fr || p.product_name || p.generic_name_fr || p.generic_name || '');
+    fill('fCat',   p.categories_tags?.find(t => t.startsWith('en:'))?.replace('en:','').replace(/-/g,' ') || '');
+    fill('fType',  p.quantity || p.packaging || '');
+
+    // Image : prendre la meilleure dispo
+    const img = p.image_front_url || p.image_url || p.image_front_small_url || '';
+    if (img) {
+      const fImg = document.getElementById('fImg');
+      if (fImg && !fImg.value.trim()) {
+        fImg.value = img;
+        previewImg();
+      }
+    }
+
+    if (st) { st.textContent = '✓ Infos récupérées depuis Open Food Facts'; st.style.color = 'var(--green)'; }
+    toast('Infos trouvées ✓', 'ok');
+
+  } catch(e) {
+    if (st) { st.textContent = '✗ Erreur réseau — réessayez'; st.style.color = 'var(--red)'; }
+    toast('Erreur réseau', 'err');
+  } finally {
+    if (btn) btn.classList.remove('loading');
+    setTimeout(() => { if (st) st.style.display = 'none'; }, 5000);
+  }
+}
+
+// Charge et vérifie l'image depuis l'URL saisie
+function fetchImgFromUrl() {
+  const url = (document.getElementById('fImg')?.value || '').trim();
+  if (!url) { toast('Entrez une URL image', 'warn'); return; }
+  const tag = document.getElementById('imgPreviewTag');
+  const prev = document.getElementById('imgPreview');
+  if (!tag || !prev) return;
+  prev.style.display = '';
+  tag.src = '';
+  tag.style.opacity = '0.4';
+  const test = new Image();
+  test.onload = () => {
+    tag.src = url;
+    tag.style.opacity = '1';
+    toast('Image chargée ✓', 'ok');
+  };
+  test.onerror = () => {
+    tag.style.opacity = '0.2';
+    toast('URL image invalide ou inaccessible', 'err');
+  };
+  test.src = url;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2788,8 +3115,13 @@ function renderCat() {
     const editB = p.canEdit ? `<button class="cb edit" title="Modifier" onclick="event.stopPropagation();openEdit(${idx})">✏</button>` : '';
     const delB  = p.canDel  ? `<button class="cb del"  title="Supprimer" onclick="deleteByIdx(${idx},event)">🗑</button>` : '';
     const dlc   = dlcChip(a['DLC'] || '');
+    const isSel = _selected.has(idx);
+    const clickFn = _selectMode
+      ? `toggleCardSelect(${idx}, event)`
+      : `openDetail(${idx})`;
 
-    return `<div class="article-card" onclick="openDetail(${idx})">
+    return `<div class="article-card${isSel?' selected':''}" data-idx="${idx}" onclick="${clickFn}">
+      <div class="card-sel-box"></div>
       ${a._new ? '<div class="new-chip">NEW</div>' : ''}
       <div class="article-card-btns">${editB}${delB}</div>
       <div class="card-img">${img ? `<img src="${h(img)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '📦'}</div>
